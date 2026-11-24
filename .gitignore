@@ -29,7 +29,7 @@ secrets/
 *.sqlite3
 *.sqlite-wal
 *.sqlite-shm
-data/
+/data/
 /prisma/*.db*
 
 # --- sigurnosne kopije i izvozi ---

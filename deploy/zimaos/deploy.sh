@@ -29,7 +29,7 @@ flock -n 9 || { echo "Drugi deploy je u tijeku." >&2; exit 75; }
 # Jednokratna naredba unutar zadane slike, bez mreže, s istim volumenima kao aplikacija.
 in_image() {
   local image="$1"; shift
-  docker run --rm --network none --user "$APP_UID:$APP_UID" --read-only --tmpfs /tmp \
+  docker run --rm --network none --user "$APP_UID:$APP_UID" --read-only --tmpfs /tmp -e HOME=/tmp \
     --security-opt no-new-privileges:true --cap-drop ALL \
     -v "$DATA:/data" -v "$BACKUPS:/backups" -e DATABASE_URL=file:/data/app.db \
     "$image" "$@"
