@@ -48,6 +48,7 @@ Razvoj ide kroz feature grane i pull requestove prema `main`; CI mora proći pri
 
 - Planiranje: [analiza](docs/planning/01-analiza-ddb.md), [specifikacija](docs/planning/02-specifikacija.md), [razvojni plan](docs/planning/03-razvojni-plan.md), [nedosljednosti i otvorene odluke](docs/planning/NEDOSLJEDNOSTI.md)
 - Odluke: [docs/adr](docs/adr/)
+- Izvještaji: [Faza 0](docs/reports/faza-0-izvjestaj.md)
 - Pravila za agente: [CLAUDE.md](CLAUDE.md), [AGENTS.md](AGENTS.md)
 - Operacije: [CI/CD](docs/operations/ci-cd.md), [ZimaOS deployment](docs/operations/zimaos-deployment.md), [SQLite sigurnost](docs/operations/sqlite-sigurnost.md), [rollback i restore](docs/operations/rollback-i-restore.md), [tajne i konfiguracija](docs/operations/tajne-i-konfiguracija.md), [multi-agent workflow](docs/operations/multi-agent-workflow.md)
 
