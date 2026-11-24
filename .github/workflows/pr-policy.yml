@@ -22,10 +22,11 @@ jobs:
         run: |
           set -euo pipefail
           ok=true
-          if ! printf '%s' "$BODY" | grep -Eiq '(closes|fixes|resolves|refs)[[:space:]]+#[0-9]+'; then
+          # Here-string umjesto `printf | grep -q`: uz pipefail grep -q prekida cijev i daje lažni neuspjeh.
+          if ! grep -Eiq '(closes|fixes|resolves|refs)[[:space:]]+#[0-9]+' <<<"$BODY"; then
             echo "::error::PR mora referencirati GitHub Issue (npr. 'Closes #12' ili 'Refs #12')."; ok=false
           fi
-          if ! printf '%s' "$BODY" | grep -Eiq 'faza:[[:space:]]*[0-7]'; then
+          if ! grep -Eiq 'faza:[[:space:]]*[0-7]' <<<"$BODY"; then
             echo "::error::PR mora navesti razvojnu fazu (npr. 'Faza: 1')."; ok=false
           fi
           $ok
