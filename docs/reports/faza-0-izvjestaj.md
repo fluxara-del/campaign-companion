@@ -83,13 +83,13 @@ Stanje aktivacije: nijedna tajna ni varijabla nije postavljena (`gh secret list`
 
 ## 6. Codex Code Review — stanje
 
-Provjereno 24. 11. 2026. na PR #6: **nema Codex reviewa, komentara, reakcija ni check runova** (`reviews: []`, `comments: []`, inline komentari 0; check runovi samo od `github-actions`). Codex dakle nije povezan s repozitorijem ili nije uključen review za njega. Iz ovog okruženja nije moguće izlistati instalirane GitHub Appove (token nije GitHub App token).
+**Povezan i radi** (provjereno 24. 11. 2026.): vlasnik je uključio ChatGPT Codex Connector; na komentar `@codex review` Codex je pregledao commit `41c616d` i prijavio jedan nalaz:
 
-Ručni koraci za vlasnika:
-1. chatgpt.com → Codex → Settings → povezati GitHub i instalirati **ChatGPT Codex Connector** s pristupom *Only select repositories* → `campaign-companion`.
-2. U Codex postavkama → Code review → uključiti za `fluxara-del/campaign-companion`. Automatski review novih PR-ova uključiti samo ako ga plan nudi; inače ručno.
-3. Probni okidač: komentar `@codex review` na PR #6. Očekivano: Codex reagira i objavi review (čita `AGENTS.md`).
-4. Ne davati Codexu zadatke koji pushaju na `fix/faza-0-docker-ci` dok je PR otvoren.
+| Ozbiljnost | Datoteka | Nalaz | Ishod |
+|---|---|---|---|
+| P2 / važno | `.github/workflows/pr-policy.yml:16` | Iznimka za Dependabot koristila je `github.actor`; kad vlasnik uredi Dependabot PR, provjera bi ga pogrešno odbila. | Prihvaćeno, ispravljeno (`github.event.pull_request.user.login`), odgovor u PR-u. |
+
+Automatski review novih PR-ova ovisi o Codex postavkama vlasnika; ručni okidač `@codex review` radi.
 
 ## 7. Samoprovjera (nalazi Lead Developera)
 
