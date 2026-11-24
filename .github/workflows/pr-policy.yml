@@ -13,7 +13,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     # Dependabot PR-ovi su iznimka: nastaju automatski i nemaju Issue; i dalje prolaze CI i traže odobrenje vlasnika.
-    if: github.actor != 'dependabot[bot]'
+    # Provjerava se autor PR-a, ne pokretač događaja (vlasnik može urediti Dependabot PR).
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - name: Provjera opisa PR-a
         env:
