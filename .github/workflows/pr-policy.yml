@@ -12,6 +12,8 @@ jobs:
     name: PR pravila (Issue i faza)
     runs-on: ubuntu-24.04
     timeout-minutes: 2
+    # Dependabot PR-ovi su iznimka: nastaju automatski i nemaju Issue; i dalje prolaze CI i traže odobrenje vlasnika.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Provjera opisa PR-a
         env:
