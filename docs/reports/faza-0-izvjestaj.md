@@ -1,8 +1,37 @@
 # Izvještaj Faze 0 — za neovisni supervisor review
 
-Datum: 24. 11. 2026. Pripremio: Claude Code (Lead Developer). Status: **čeka review i odobrenje vlasnika.** PR #6 nije spojen, Faza 1 nije započeta, produkcijski deploy nije aktiviran.
+Datum: 24. 11. 2026., dopunjeno 25. 11. 2026. nakon supervisor reviewa. Pripremio: Claude Code (Lead Developer). Status: **čeka review i odobrenje vlasnika.** PR #6 nije spojen, Faza 1 nije započeta, produkcijski deploy nije aktiviran.
 
 Ovaj dokument je samostalan: supervisor ga može pregledati bez pristupa razgovoru. Svaka tvrdnja ima izvor (datoteku, PR, workflow run) ili je označena kao **neprovjereno**.
+
+## 0. Odgovor na supervisor review (25. 11. 2026., REQUEST CHANGES na `8ba555e`)
+
+| Nalaz | Ozbiljnost | Odgovor | Gdje |
+|---|---|---|---|
+| SR-01 Semantika batcha nije određena | blokirajuće | **Riješeno u ovom PR-u.** Jedinica idempotentnosti je batch: jedan `batchId`, `campaignId` i `expectedStateVersion`; kanonski SHA-256 (RFC 8785) uređenog popisa `commandId`/tip/namjera/payload; jedan `BatchReceipt`; `CommandIndex` zabranjuje ponovnu uporabu člana; isti zahtjev → spremljeni receipt; promijenjen sadržaj pod istim ID-em → 409 bez upisa; paralelni zahtjevi serijalizirani write lockom (`BEGIN IMMEDIATE`); 7 izvršivih kriterija prihvata za Fazu 1. | ADR-0004 §„Envelope batcha”, §„Obrada”, §„Ponašanje u rubnim slučajevima”, §„Kriteriji prihvata” |
+| SR-02 Izmjena primijenjene migracije se ne otkriva | važno prije produkcije | Praćeno s 5 kriterija prihvata (CI zabrana izmjene/brisanja/preimenovanja, usporedba checksuma prije deploya/rollbacka/restorea, test istog imena s drugim SQL-om). | Issue #7 |
+| SR-03 Lock, zaustavljanje pisca, prekid zamjene baze | visoki podatkovni rizik prije produkcije | Praćeno s 5 kriterija prihvata (zajednički lock, razlikovanje prvog pokretanja od neuspjelog stopa, journal zamjene i oporavak, fault-injection testovi uključujući WAL). | Issue #8 |
+| SR-04 Ručni deploy bez provjere CI-a za isti SHA | važno prije produkcije | Praćeno s 5 kriterija prihvata (provjera uspješnog CI-a za repo/`main`/`push`/točan SHA, preskakanje kod nedostatka dokaza ili greške API-ja, isto za rollback, testirana logika bez objave slike). | Issue #9 |
+| N3 Vremenska zona | odluka vlasnika | Zabilježeno kao **otvorena odluka, nije odlučeno**; primjeri konfiguracije vraćeni na `Europe/Warsaw` iz specifikacije. | `NEDOSLJEDNOSTI.md` N3 |
+
+Issuei #7–#9 imaju oznaku `prije-produkcije`: deploy (`DEPLOY_ENABLED`) se ne smije uključiti dok nisu zatvoreni s dokazom.
+
+## 0a. Što postojeći testovi dokazuju, a što ne
+
+| Područje | Dokazano (test i mjesto) | **Nije dokazano** |
+|---|---|---|
+| Migracije nad praznom bazom | Sve migracije se primjenjuju, baza prolazi `integrity_check`, nema pending migracija (`tests/db` „migracije nad praznom bazom”; CI Docker smoke test u stvarnoj slici) | Migracija nad bazom s podacima; izmjena već primijenjene migracije (SR-02, #7) |
+| Kopija | Online Backup API uključuje podatke koji su samo u WAL-u; manifest i hash; odbijanje prepisivanja (`tests/db`, smoke test) | Kopija dok aplikacija stvarno piše pod opterećenjem |
+| Provjera kopije | Izmijenjena kopija se otkriva hashom (`tests/db`) | Djelomično zapisana kopija nakon pada diska |
+| Restore | Vraća stanje u odredište i čuva prethodnu bazu (`tests/db`); u stvarnoj slici u **zasebnu** datoteku (smoke test) | Zamjena **aktivne** baze u stvarnom kontejneru; prekid usred zamjene; zajednički lock (SR-03, #8) |
+| Kompatibilnost migracija | Pending aditivna = sigurno; neodobrena destruktivna = blok; novija baza od slike = nekompatibilno (`tests/db`) | Checksum provjera (SR-02, #7) |
+| Destruktivni SQL | Prepoznavanje `DROP`/`DELETE`, komentari, marker (`tests/unit`) | Heuristika nad tekstom, nije SQL parser |
+| Health | Odgovor 200 nakon migracija u stvarnoj, read-only slici (smoke test) | 503 grane (pending/nekompatibilno) nisu testirane automatski |
+| `deploy.sh` / `deploy-gate.sh` | **Ništa automatski.** Pojedinačni alati koje skripta poziva testirani su izravno. | Cijela orkestracija, neuspjeh zaustavljanja, automatski povratak, forced command, ponašanje na ZimaOS-u (#8, pilot) |
+| Deploy workflow | Gate preskače build i deploy kad `DEPLOY_ENABLED` nije postavljen (run 45501832880) | Ručni put s provjerom CI-a (SR-04, #9); stvarni Tailscale/SSH korak |
+| Domenska pravila D&D 2024 | **Ništa** — domenski model ne postoji u Fazi 0 | Sve (Faza 1+) |
+| Privatnost DM sadržaja, AI | **Ništa** | Faze 4–6 |
+| Neizmijenjenost kampanje | SHA-256 svih 44 datoteka prije/poslije — **tvrdnja autora**, izvršeno lokalno, nije u CI-u | Neovisna provjera |
 
 ## 1. Opseg i izvori
 
@@ -52,9 +81,7 @@ Zaključane verzije i obrazloženja: ADR-0001 (Node 24, Next 16.4.6, React 19.3.
 
 Sigurnost workflowa: `permissions` minimalne (`contents: read`; `packages: write` samo u build jobu deploya; top-level `{}` u deployu), `persist-credentials: false`, sve akcije pinirane na commit SHA, `concurrency: production-deploy` bez prekidanja, deploy samo iz uspješnog CI-a pokrenutog **pushom** na `main` u ovom repozitoriju, tajne samo kroz `env`.
 
-**Iskrena ograničenja:**
-- „Testovi domenskih pravila” trenutačno ne postoje jer domenski model nije dio Faze 0. CI korak `test:db` pokriva sigurnost baze; domenski testovi ulaze s Fazom 1.
-- Docker build i smoke test izvršavaju se samo u CI-u (lokalno nema Dockera).
+**Ograničenja:** vidi §0a (što testovi dokazuju, a što ne).
 
 ## 4. Sigurnost SQLite podataka
 
@@ -106,7 +133,7 @@ Poznata ograničenja i rizici koje supervisor treba procijeniti:
 
 ## 8. Otvorene odluke (vlasnik)
 
-O1 opseg pravila i katalog (prijedlog: SRD 5.2 + korisnički sadržaj; ADR-0005) · O2 AI provider, model, budžet · O3 DM tajne u AI kontekstu (prijedlog: ne) · O4 opseg borbe · O5 autentifikacija · O6 kopija izvan ZimaOS-a · O7 CPU arhitektura · GitHub Pro da/ne · zatvaranje Dependabot PR-ova #1–#4 · prihvaćanje ADR-0003 do ADR-0005.
+N3 vremenska zona prikaza (Europe/Warsaw ili Europe/Zagreb, nije odlučeno) · O1 opseg pravila i katalog (prijedlog: SRD 5.2 + korisnički sadržaj; ADR-0005) · O2 AI provider, model, budžet · O3 DM tajne u AI kontekstu (prijedlog: ne) · O4 opseg borbe · O5 autentifikacija · O6 kopija izvan ZimaOS-a · O7 CPU arhitektura · GitHub Pro da/ne · zatvaranje Dependabot PR-ova #1–#4 · prihvaćanje ADR-0003 do ADR-0005.
 
 ## 9. Pitanja za supervisora
 
