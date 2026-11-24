@@ -1,0 +1,26 @@
+name: Zadatak
+description: Zadatak iz razvojnog plana (jedna cjelina = jedan PR)
+labels: ["zadatak"]
+body:
+  - type: dropdown
+    id: faza
+    attributes:
+      label: Faza
+      options: ["0", "1", "2", "3", "4", "5", "6", "7"]
+    validations: { required: true }
+  - type: textarea
+    id: cilj
+    attributes:
+      label: Cilj i opseg
+      description: Što se radi i što izričito nije dio zadatka.
+    validations: { required: true }
+  - type: textarea
+    id: prihvat
+    attributes:
+      label: Kriteriji prihvata
+      description: Iz 03-razvojni-plan.md / §11 specifikacije.
+    validations: { required: true }
+  - type: textarea
+    id: rizici
+    attributes:
+      label: Podatkovni i sigurnosni rizici

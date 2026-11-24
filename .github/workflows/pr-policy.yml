@@ -1,0 +1,28 @@
+name: PR pravila
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-policy:
+    name: PR pravila (Issue i faza)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Provjera opisa PR-a
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          ok=true
+          if ! printf '%s' "$BODY" | grep -Eiq '(closes|fixes|resolves|refs)[[:space:]]+#[0-9]+'; then
+            echo "::error::PR mora referencirati GitHub Issue (npr. 'Closes #12' ili 'Refs #12')."; ok=false
+          fi
+          if ! printf '%s' "$BODY" | grep -Eiq 'faza:[[:space:]]*[0-7]'; then
+            echo "::error::PR mora navesti razvojnu fazu (npr. 'Faza: 1')."; ok=false
+          fi
+          $ok

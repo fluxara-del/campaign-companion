@@ -1,0 +1,20 @@
+// Prisma ORM 7 (zaključano na 7.10.1). Domenski model dolazi u Fazi 1.
+// U Fazi 0 postoji samo infrastrukturna tablica za metapodatke instance,
+// kako bi CI mogao provjeriti lanac migracija od prvog dana.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Ključ/vrijednost metapodaci instance (npr. id instance, verzija sheme aplikacije).
+/// Nije domenski podatak kampanje.
+model AppMeta {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

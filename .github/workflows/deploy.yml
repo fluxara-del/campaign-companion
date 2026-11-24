@@ -1,0 +1,202 @@
+name: Deploy (ZimaOS)
+
+# NEAKTIVNO dok se ne postave varijable repozitorija:
+#   DEPLOY_ENABLED=true        -> dopušta ručni deploy/rollback (workflow_dispatch)
+#   AUTO_DEPLOY_ENABLED=true   -> dodatno dopušta automatski deploy nakon uspješnog CI-a na main
+# Bez njih svi jobovi se preskaču. Prvi stvarni deploy je ručan i traži odobrenje vlasnika.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy = izgradi i objavi trenutni main; rollback = vrati navedenu sliku"
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      image:
+        description: "Samo za rollback: ghcr.io/<owner>/campaign-companion@sha256:<digest>"
+        type: string
+        required: false
+      confirm:
+        description: "Upiši PRODUKCIJA za potvrdu"
+        type: string
+        required: true
+
+permissions: {}
+
+# Nikad dva produkcijska deploya istodobno; novi čeka umjesto da prekine aktivni.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Provjera dopuštenja
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      action: ${{ steps.decide.outputs.action }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+          AUTO_DEPLOY_ENABLED: ${{ vars.AUTO_DEPLOY_ENABLED }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          run=false; action=deploy; sha="$SHA"
+          if [ "$DEPLOY_ENABLED" != "true" ]; then
+            echo "Deploy nije aktiviran (vars.DEPLOY_ENABLED != true). Preskačem."
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT_CONFIRM" != "PRODUKCIJA" ]; then echo "::error::Nedostaje potvrda PRODUKCIJA."; exit 1; fi
+            if [ "$INPUT_ACTION" = "deploy" ] && [ "$REF" != "refs/heads/main" ]; then echo "::error::Deploy je dopušten samo s main."; exit 1; fi
+            run=true; action="$INPUT_ACTION"
+          elif [ "$EVENT" = "workflow_run" ]; then
+            # Samo uspješan CI pokrenut pushom na main u ovom repozitoriju (nikad PR ili fork).
+            if [ "$AUTO_DEPLOY_ENABLED" = "true" ] && [ "$RUN_CONCLUSION" = "success" ] && [ "$RUN_EVENT" = "push" ] \
+               && [ "$RUN_BRANCH" = "main" ] && [ "$RUN_REPO" = "$REPO" ]; then
+              run=true; sha="$RUN_SHA"
+            else
+              echo "Automatski deploy nije aktiviran ili CI nije uspio. Preskačem."
+            fi
+          fi
+          { echo "run=$run"; echo "action=$action"; echo "sha=$sha"; } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Izgradnja i objava slike (GHCR)
+    needs: gate
+    if: needs.gate.outputs.run == 'true' && needs.gate.outputs.action == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+    steps:
+      - name: Checkout (točan commit koji je prošao CI)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Metapodaci migracija
+        id: meta
+        run: echo "migrations_head=$(ls -1 prisma/migrations | grep -E '^[0-9]{14}_' | sort | tail -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Prijava u GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Oznake slike
+        id: tags
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=sha-${{ needs.gate.outputs.sha }}
+            type=raw,value=build-${{ github.run_number }}
+
+      - name: Build i push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
+          provenance: true
+          build-args: |
+            APP_VERSION=build-${{ github.run_number }}
+            GIT_SHA=${{ needs.gate.outputs.sha }}
+            MIGRATIONS_HEAD=${{ steps.meta.outputs.migrations_head }}
+
+      - id: ref
+        env:
+          REPO: ${{ github.repository }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: echo "image=ghcr.io/${REPO,,}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy na ZimaOS
+    needs: [gate, build]
+    if: always() && needs.gate.outputs.run == 'true' && (needs.build.result == 'success' || (needs.gate.outputs.action == 'rollback' && needs.build.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+    permissions:
+      contents: read
+    steps:
+      - name: Odabir slike
+        id: img
+        env:
+          ACTION: ${{ needs.gate.outputs.action }}
+          BUILT: ${{ needs.build.outputs.image }}
+          INPUT_IMAGE: ${{ inputs.image }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = "rollback" ]; then image="$INPUT_IMAGE"; else image="$BUILT"; fi
+          if ! printf '%s' "$image" | grep -Eq "^ghcr\.io/${REPO,,}@sha256:[a-f0-9]{64}$"; then
+            echo "::error::Neispravna referenca slike (mora biti digest iz ovog repozitorija)."; exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Spajanje na Tailscale (efemerni čvor, tag:ci-deploy)
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci-deploy
+
+      - name: SSH ključ i pinirani host key
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy (backup → provjera → migracija → health → izvještaj)
+        env:
+          ACTION: ${{ needs.gate.outputs.action }}
+          IMAGE: ${{ steps.img.outputs.image }}
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER_NAME: ${{ vars.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          # Na serveru ključ ima forced command (deploy-gate.sh): dopušta samo deploy/rollback/status.
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
+            "${USER_NAME}@${HOST}" "${ACTION} ${IMAGE}" | tee deploy.log
+          echo "### ${ACTION} uspješan" >> "$GITHUB_STEP_SUMMARY"
+          echo "Slika: \`${IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Uklanjanje ključa
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

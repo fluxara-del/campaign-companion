@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+ * Vlastiti vizualni sustav Kronika Devet Zvona (početna paleta, Faza 0).
+ * Mirna tipografija, tamno-brončani naglasci; boja nikad nije jedini nositelj stanja.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+
+  --color-pergament: oklch(0.97 0.01 85);
+  --color-tinta: oklch(0.25 0.02 260);
+  --color-bronca: oklch(0.55 0.1 60);
+  --color-zvono: oklch(0.45 0.08 200);
+  --color-upozorenje: oklch(0.55 0.18 30);
+}
+
+:root {
+  --background: var(--color-pergament);
+  --foreground: var(--color-tinta);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.2 0.015 260);
+    --foreground: oklch(0.93 0.01 85);
+  }
+}
+
+html {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-bronca);
+  outline-offset: 2px;
+}

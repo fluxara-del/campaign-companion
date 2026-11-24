@@ -1,0 +1,61 @@
+# --- ovisnosti i build ---
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+src/generated/
+
+# --- tajne i lokalna konfiguracija (NIKAD u Git) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_*
+!id_*.pub
+secrets/
+.secrets/
+
+# --- SQLite baze, WAL/SHM, journal (NIKAD u Git) ---
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+data/
+/prisma/*.db*
+
+# --- sigurnosne kopije i izvozi ---
+backups/
+*.bak
+*.backup
+exports/
+*.zip
+
+# --- privatni podaci kampanje ---
+# Kopije kampanje za probni uvoz drže se izvan repozitorija ili ovdje:
+campaign-data/
+dm_private/
+import-sandbox/
+
+# --- referentni materijal koji ne smije u repozitorij ---
+# Snimka tuđeg proizvoda služi samo kao lokalna referenca (vidi docs/planning/NEDOSLJEDNOSTI.md).
+/primjer dizajna ui.png
+reference/
+
+# --- logovi i alati ---
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.claude/settings.local.json

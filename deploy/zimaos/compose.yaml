@@ -1,0 +1,34 @@
+# Produkcijska konfiguracija za ZimaOS. Koristi je deploy.sh; ne pokreće se iz CI-a izravno.
+# KDZ_IMAGE postavlja deploy.sh na točan digest (ghcr.io/...@sha256:...).
+name: campaign-companion
+
+services:
+  app:
+    image: ${KDZ_IMAGE:?KDZ_IMAGE nije postavljen}
+    container_name: campaign-companion
+    restart: unless-stopped
+    env_file:
+      - ${KDZ_ROOT:-/DATA/AppData/campaign-companion}/config/app.env
+    environment:
+      DATABASE_URL: file:/data/app.db
+      BACKUP_DIR: /backups
+    volumes:
+      # Trajni lokalni volumen izvan imagea i izvan Gita. Baza nikad nije na mrežnom disku.
+      - ${KDZ_ROOT:-/DATA/AppData/campaign-companion}/data:/data
+      - ${KDZ_ROOT:-/DATA/AppData/campaign-companion}/backups:/backups
+    # Samo loopback: pristup ide kroz `tailscale serve` (HTTPS unutar tailneta). Nema javnog porta.
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
