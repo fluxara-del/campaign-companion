@@ -6,7 +6,7 @@
 |---|---|
 | **Provjere** | `npm ci` → TypeScript → ESLint (0 upozorenja) → unit testovi → testovi baze → provjera migracija (destruktivne naredbe, imena, lock) → `prisma migrate diff --exit-code` (shema = migracije) → production build → `npm audit` (produkcijske ovisnosti, high+) |
 | **Docker image i smoke test** | build slike (bez objave) → `migrate deploy` na privremenom volumenu → procjena migracija → backup → pokretanje → `/api/health` |
-| **PR pravila** (`pr-policy.yml`) | PR mora referencirati issue (`Closes #n` / `Refs #n`) i fazu (`Faza: n`) |
+| **PR pravila** (`pr-policy.yml`) | PR mora referencirati issue (`Closes #n` / `Refs #n`) i fazu (`Faza: n`); iznimka su Dependabot PR-ovi |
 
 Svaki neuspjeli korak ruši workflow. Testovi nemaju pristup produkciji: nema tajni, nema Tailscalea, baze su privremene.
 
