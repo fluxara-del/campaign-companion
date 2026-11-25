@@ -62,6 +62,28 @@ jobs:
       - name: Sigurnost ovisnosti (npm audit, produkcijske, high+)
         run: npm run audit:deps
 
+  windows-import:
+    name: Uvoz na Windowsu (NTFS junction)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalacija ovisnosti
+        run: npm ci --no-fund
+
+      - name: Testovi uvoza (stvarni NTFS junctioni, TOCTOU, BOM)
+        run: npx vitest run tests/db/import.test.ts
+
   docker:
     name: Docker image i smoke test
     runs-on: ubuntu-24.04

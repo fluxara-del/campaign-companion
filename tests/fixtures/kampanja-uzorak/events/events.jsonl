@@ -1,0 +1,4 @@
+{"id":"UZR-S000-E001","sessionId":"UZR-S000","stateVersion":1,"type":"backstory","title":"Prošlost","description":"Lik je bio stražar.","played":false}
+{"id":"UZR-S001-E001","sessionId":"UZR-S001","stateVersion":2,"type":"adventure","title":"Borba","description":"Lik je potrošio dva slota."}
+
+{"id":"UZR-S001-E002","sessionId":"UZR-S001","stateVersion":2,"type":"adventure","title":"Crtež","description":"Lik je dobio crtež."}

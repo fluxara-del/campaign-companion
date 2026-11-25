@@ -1,0 +1,3 @@
+# Kanon
+
+Sintetički svijet.

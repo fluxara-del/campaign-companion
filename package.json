@@ -25,7 +25,8 @@
     "db:verify": "tsx scripts/db/verify.ts",
     "db:restore": "tsx scripts/db/restore.ts",
     "audit:deps": "npm audit --omit=dev --audit-level=high",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "import:trial": "tsx scripts/import/trial-import.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "7.10.1",

@@ -40,6 +40,11 @@ model Campaign {
   events     DomainEvent[]
   journal    JournalEntry[]
   baselines  CampaignBaseline[]
+  imports    ImportBatch[]
+  legacy     LegacyEvent[]
+  items      ItemInstance[]
+  entities   EntityRecord[]
+  documents  SourceDocument[]
 }
 
 model Member {
@@ -63,9 +68,10 @@ model Character {
   hpMax      Int?
   hpTemp     Int    @default(0)
 
-  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  campaign Campaign          @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   pools    ResourcePool[]
   wallets  Wallet[]
+  profile  CharacterProfile?
 
   @@unique([campaignId, id])
 }
@@ -217,4 +223,123 @@ model CampaignBaseline {
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
 
   @@unique([campaignId, seq])
+}
+
+// ---------------------------------------------------------------------------
+// Faza 2: uvoz postojeće kampanje. Sve tablice su vezane na kampanju složenim
+// ključevima; legacy zapisi i izvorni dokumenti su append-only (triggeri u migraciji).
+// ---------------------------------------------------------------------------
+
+/// Jedan probni ili prihvaćeni uvoz: manifest izvornih datoteka i izvještaj.
+model ImportBatch {
+  id                 String  @id
+  campaignId         String
+  /// trial | accepted (prihvaćanje je zasebna buduća odluka vlasnika)
+  status             String
+  importerVersion    String
+  sourceManifestJson String
+  sourceManifestHash String
+  contentHash        String
+  legacyStateVersion Int?
+  legacyLastEventId  String?
+  reportJson         String
+  createdAt          String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
+}
+
+/// Legacy događaj iz events.jsonl: izvorni JSON i hash, bez izmišljenih mehaničkih delta.
+model LegacyEvent {
+  campaignId         String
+  legacyId           String
+  position           Int
+  sessionId          String?
+  legacyStateVersion Int?
+  type               String?
+  title              String?
+  rawJson            String
+  rawSha256          String
+  sourceFile         String
+  sourceLine         Int
+  importBatchId      String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, legacyId])
+  @@unique([campaignId, position])
+}
+
+/// Primjerak predmeta. Vlasnik, držatelj i lokacija su odvojeni; null = nepoznato.
+/// quantity: null = nepoznato (npr. predmet izvan inventara bez navedene količine)
+model ItemInstance {
+  id              String   @id
+  campaignId      String
+  name            String
+  quantity        Int?
+  /// Legacy ID vlasnika (lik ili NPC); null = nepoznat vlasnik
+  ownerRef        String?
+  /// Legacy ID trenutačnog držatelja; null = nepoznato
+  holderRef       String?
+  location        String?
+  containerItemId String?
+  /// null = nepoznato
+  equipped        Boolean?
+  attuned         Boolean?
+  massLbTenths    Int?
+  stateNote       String?
+  attributesJson  String
+  sourceRef       String
+
+  campaign  Campaign       @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  container ItemInstance?  @relation("ItemContainer", fields: [campaignId, containerItemId], references: [campaignId, id], onDelete: Restrict)
+  contents  ItemInstance[] @relation("ItemContainer")
+
+  @@unique([campaignId, id])
+}
+
+/// Statički profil lika iz izvora (atributi, vještine, čarolije, osobine) dok ga Faza 3 ne modelira.
+model CharacterProfile {
+  campaignId  String
+  characterId String
+  profileJson String
+  sourceRef   String
+
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@id([campaignId, characterId])
+}
+
+/// NPC, zadatak, odnos ili lokacija iz registara. Vrsta znanja se klasificira kasnije.
+model EntityRecord {
+  id         String
+  campaignId String
+  /// npc | quest | relationship
+  kind       String
+  name       String
+  status     String?
+  /// player | dm | shared
+  visibility String
+  dataJson   String
+  sourceRef  String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, kind, id])
+}
+
+/// Izvorni dokument (sesija, handoff, kanon) kao prilog, s hashom.
+model SourceDocument {
+  campaignId    String
+  path          String
+  /// session | handoff | world | other
+  kind          String
+  sha256        String
+  content       String
+  importBatchId String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, path])
 }

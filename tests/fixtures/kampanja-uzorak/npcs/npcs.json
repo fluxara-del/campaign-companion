@@ -1,0 +1,1 @@
+{ "npcs": [ { "id": "NPC-001", "name": "Probna suputnica", "status": "aktivna", "adventureEventIds": ["UZR-S001-E001"] } ], "relationships": [ { "from": "NPC-001", "to": "PC-001", "description": "Oprezno povjerenje." } ], "idReconciliation": "Sintetička bilješka o usklađivanju ID-jeva." }
