@@ -345,6 +345,54 @@ describe("Pristup potvrdi batcha (autor ili vlasnik)", () => {
   });
 });
 
+describe("Naslijeđena svojstva objekta nisu entiteti (Codex P1)", () => {
+  const protoKeys = () => Object.getOwnPropertyNames(Object.prototype).sort();
+
+  it.each([
+    ["ApplyDamage", { characterId: "toString", amount: 3, damageType: null }],
+    ["ApplyHealing", { characterId: "hasOwnProperty", amount: 1 }],
+    ["SetTemporaryHp", { characterId: "valueOf", amount: 5, mode: "replace" }],
+    ["ConsumeResource", { resourcePoolId: "isPrototypeOf", amount: 1 }],
+    ["SpendCurrency", { walletId: "toLocaleString", amountMinor: 1, reason: "x" }],
+  ] as const)("%s s ID-em naslijeđenog svojstva → odbijeno bez ikakve promjene", (type, payload) => {
+    const keysBefore = protoKeys();
+    const stateBefore = loadState(db, C1);
+    expectDomainError(
+      () => executeBatch(db, OWNER, batch([cmd(type, payload as never)])),
+      "rule_violation",
+    );
+    expect(protoKeys()).toEqual(keysBefore);
+    expect(({} as Record<string, unknown>).hpTemp).toBeUndefined();
+    expect(({} as Record<string, unknown>).hpCurrent).toBeUndefined();
+    expect(loadState(db, C1)).toEqual(stateBefore);
+    expect(campaignVersion(db)).toBe(0);
+    for (const t of ["DomainEvent", "BatchReceipt", "JournalEntry"]) expect(count(db, t)).toBe(0);
+  });
+
+  it.each(["__proto__", "constructor", "prototype"])("rezervirani ključ %s se odbija već pri validaciji", (id) => {
+    expectDomainError(() => executeBatch(db, OWNER, batch([cmd("ApplyDamage", { characterId: id, amount: 1, damageType: null })])), "validation");
+    expect(count(db, "BatchReceipt")).toBe(0);
+  });
+
+  it("valjani ID i dalje prolazi", () => {
+    const r = executeBatch(db, OWNER, batch([cmd("ApplyDamage", { characterId: PC, amount: 3, damageType: null })]));
+    expect(r.replayed).toBe(false);
+    expect(loadState(db, C1).characters[PC]!.hpCurrent).toBe(17);
+  });
+
+  it("učitavanje stanja s ID-em __proto__ iz baze stvara vlastito svojstvo, ne mijenja prototip", () => {
+    db.prepare(`INSERT INTO "Character" (id, campaignId, name, hpCurrent, hpMax, hpTemp) VALUES ('__proto__', ?, 'X', 1, 1, 0)`).run(C1);
+    const s = loadState(db, C1);
+    expect(Object.hasOwn(s.characters, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(s.characters)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).hpCurrent).toBeUndefined();
+    const cloned = structuredClone(s).characters;
+    expect(Object.hasOwn(cloned, "__proto__")).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(cloned, "__proto__")?.value).toMatchObject({ name: "X" });
+    expect(Object.getPrototypeOf(cloned)).toBe(Object.prototype);
+  });
+});
+
 describe("Validacija ulaza", () => {
   it("nepoznata polja i decimalni iznosi se odbijaju", () => {
     const b = batch([cmd("ApplyHealing", { characterId: PC, amount: 1 })]) as Record<string, unknown>;

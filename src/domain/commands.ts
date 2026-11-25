@@ -1,13 +1,15 @@
 import { z } from "zod";
 import { canonicalHash } from "./canonical";
 import { DomainError } from "./errors";
+import { RESERVED_KEYS } from "./records";
 
 /** Stabilni ID entiteta: dopušta i legacy oblike (npr. `PC-001`, `KDZ-001`). */
 export const EntityId = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[A-Za-z0-9._:-]+$/, "Neispravan ID");
+  .regex(/^[A-Za-z0-9._:-]+$/, "Neispravan ID")
+  .refine((v) => !RESERVED_KEYS.has(v), "Rezervirani ključ nije dopušten kao ID");
 
 /** ID-jevi koje generira klijent (batch, naredba): UUID. */
 export const ClientId = z.uuid();

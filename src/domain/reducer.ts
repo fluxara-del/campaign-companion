@@ -1,4 +1,5 @@
 import type { DomainEventBody } from "./events";
+import { getOwn } from "./records";
 import type { CampaignState } from "./state";
 
 export class ReplayDivergenceError extends Error {
@@ -21,7 +22,7 @@ function expectEqual(label: string, actual: unknown, expected: unknown): void {
 export function applyEvent(state: CampaignState, event: DomainEventBody): CampaignState {
   switch (event.type) {
     case "DamageApplied": {
-      const c = state.characters[event.payload.characterId];
+      const c = getOwn(state.characters, event.payload.characterId);
       if (!c) throw new ReplayDivergenceError(`Nepoznat lik ${event.payload.characterId}`);
       expectEqual("hpTemp", c.hpTemp, event.payload.tempBefore);
       expectEqual("hpCurrent", c.hpCurrent, event.payload.hpBefore);
@@ -30,7 +31,7 @@ export function applyEvent(state: CampaignState, event: DomainEventBody): Campai
       return state;
     }
     case "HealingApplied": {
-      const c = state.characters[event.payload.characterId];
+      const c = getOwn(state.characters, event.payload.characterId);
       if (!c) throw new ReplayDivergenceError(`Nepoznat lik ${event.payload.characterId}`);
       expectEqual("hpCurrent", c.hpCurrent, event.payload.hpBefore);
       expectEqual("hpMax", c.hpMax, event.payload.hpMax);
@@ -38,21 +39,21 @@ export function applyEvent(state: CampaignState, event: DomainEventBody): Campai
       return state;
     }
     case "TemporaryHpSet": {
-      const c = state.characters[event.payload.characterId];
+      const c = getOwn(state.characters, event.payload.characterId);
       if (!c) throw new ReplayDivergenceError(`Nepoznat lik ${event.payload.characterId}`);
       expectEqual("hpTemp", c.hpTemp, event.payload.tempBefore);
       c.hpTemp = event.payload.tempAfter;
       return state;
     }
     case "ResourceConsumed": {
-      const p = state.resourcePools[event.payload.resourcePoolId];
+      const p = getOwn(state.resourcePools, event.payload.resourcePoolId);
       if (!p) throw new ReplayDivergenceError(`Nepoznat resurs ${event.payload.resourcePoolId}`);
       expectEqual("pool.current", p.current, event.payload.before);
       p.current = event.payload.after;
       return state;
     }
     case "CurrencySpent": {
-      const w = state.wallets[event.payload.walletId];
+      const w = getOwn(state.wallets, event.payload.walletId);
       if (!w) throw new ReplayDivergenceError(`Nepoznat novčanik ${event.payload.walletId}`);
       expectEqual("wallet.amountMinor", w.amountMinor, event.payload.before);
       w.amountMinor = event.payload.after;

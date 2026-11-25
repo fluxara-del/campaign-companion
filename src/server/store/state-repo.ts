@@ -1,4 +1,5 @@
 import type { CampaignState, CharacterState, ResourcePoolState, WalletState } from "@/domain/state";
+import { getOwn, setOwn } from "@/domain/records";
 import type { Db } from "./connection";
 
 type CharacterRow = { id: string; name: string; hpCurrent: number; hpMax: number | null; hpTemp: number };
@@ -25,7 +26,7 @@ export function loadState(db: Db, campaignId: string): CampaignState {
   for (const r of db
     .prepare(`SELECT id, name, hpCurrent, hpMax, hpTemp FROM "Character" WHERE campaignId = ? ORDER BY id`)
     .all(campaignId) as CharacterRow[]) {
-    characters[r.id] = { id: r.id, name: r.name, hpCurrent: r.hpCurrent, hpMax: r.hpMax, hpTemp: r.hpTemp };
+    setOwn(characters, r.id, { id: r.id, name: r.name, hpCurrent: r.hpCurrent, hpMax: r.hpMax, hpTemp: r.hpTemp });
   }
 
   const resourcePools: Record<string, ResourcePoolState> = {};
@@ -34,7 +35,7 @@ export function loadState(db: Db, campaignId: string): CampaignState {
       `SELECT id, characterId, resourceKey, current, max, rechargePolicy FROM "ResourcePool" WHERE campaignId = ? ORDER BY id`,
     )
     .all(campaignId) as PoolRow[]) {
-    resourcePools[r.id] = { ...r };
+    setOwn(resourcePools, r.id, { ...r });
   }
 
   const wallets: Record<string, WalletState> = {};
@@ -43,7 +44,7 @@ export function loadState(db: Db, campaignId: string): CampaignState {
       `SELECT id, ownerCharacterId, purpose, label, currency, amountMinor FROM "Wallet" WHERE campaignId = ? ORDER BY id`,
     )
     .all(campaignId) as WalletRow[]) {
-    wallets[r.id] = { ...r };
+    setOwn(wallets, r.id, { ...r });
   }
 
   return { campaignId, characters, resourcePools, wallets };
@@ -68,7 +69,7 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
     `UPDATE "Character" SET hpCurrent = ?, hpTemp = ? WHERE campaignId = ? AND id = ?`,
   );
   for (const [id, c] of Object.entries(after.characters)) {
-    const b = before.characters[id]!;
+    const b = getOwn(before.characters, id)!;
     if (b.hpMax !== c.hpMax || b.name !== c.name) throw new Error("Neočekivana promjena polja lika.");
     if (b.hpCurrent !== c.hpCurrent || b.hpTemp !== c.hpTemp) {
       const res = updChar.run(c.hpCurrent, c.hpTemp, after.campaignId, id);
@@ -78,7 +79,7 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
 
   const updPool = db.prepare(`UPDATE "ResourcePool" SET current = ? WHERE campaignId = ? AND id = ?`);
   for (const [id, p] of Object.entries(after.resourcePools)) {
-    const b = before.resourcePools[id]!;
+    const b = getOwn(before.resourcePools, id)!;
     if (b.current !== p.current) {
       const res = updPool.run(p.current, after.campaignId, id);
       if (res.changes !== 1) throw new Error(`Ažuriranje resursa ${id} nije uspjelo.`);
@@ -87,7 +88,7 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
 
   const updWallet = db.prepare(`UPDATE "Wallet" SET amountMinor = ? WHERE campaignId = ? AND id = ?`);
   for (const [id, w] of Object.entries(after.wallets)) {
-    const b = before.wallets[id]!;
+    const b = getOwn(before.wallets, id)!;
     if (b.amountMinor !== w.amountMinor) {
       const res = updWallet.run(w.amountMinor, after.campaignId, id);
       if (res.changes !== 1) throw new Error(`Ažuriranje novčanika ${id} nije uspjelo.`);

@@ -72,3 +72,11 @@ Ukupno lokalno: 59 testova u 6 datoteka (unit + db), typecheck, lint (0 upozoren
 | Važno: `verifyReplay` čita u više odvojenih upita | Cijela provjera teče u jednoj read transakciji (jedna WAL snimka). | `integrity-replay`: „valjan commit drugog pisca tijekom provjere ne izaziva lažno odstupanje”; postojeći test „otkriva promjenu stanja izvan domenskog servisa” i dalje prolazi |
 
 **Kontrolne provjere osjetljivosti testova** (izvršene lokalno, zatim vraćeno): kad se provjera izvodi bez zajedničke transakcije, novi replay test pada; kad pravilo pristupa propušta sve, padaju sva tri testa pristupa. Ukupno lokalno: 65 testova.
+
+## 7. Codex P1 na `577ba68`: naslijeđena svojstva objekta
+
+**Nalaz:** pravila su tražila lik, resurs i novčanik običnim indeksiranjem objekta (`state.characters[id]`), pa su ID-jevi poput `toString` ili `constructor` „postojali” kroz `Object.prototype`. Posljedica: mogao je nastati potvrđen događaj bez stvarne promjene u bazi, a reducer je mogao mijenjati zajednički prototip procesa.
+
+**Rješenje:** svi dohvati po ID-u u pravilima, reduceru i `persistChanges` idu kroz `getOwn` (`Object.hasOwn`), a `loadState` puni kolekcije kroz `setOwn` (`Object.defineProperty`, pa ni `__proto__` ne mijenja prototip). Kloniranje (`structuredClone`) i replay (`JSON.parse`) čuvaju vlastite ključeve (provjereno testom). Dodatno, `__proto__`, `constructor` i `prototype` nisu dopušteni kao ID entiteta već pri validaciji batcha.
+
+**Dokaz:** `batch-service` „Naslijeđena svojstva objekta nisu entiteti” — pet naredbi s ID-jevima `toString`, `hasOwnProperty`, `valueOf`, `isPrototypeOf`, `toLocaleString` kroz `executeBatch` vraćaju `rule_violation`, bez promjene `Object.prototype`, stanja, verzije, događaja, receipt-a i dnevnika; rezervirani ključevi → `validation`; valjani ID prolazi; `__proto__` učitan iz baze postaje vlastito svojstvo. Kontrolna provjera: vraćanjem starog dohvata u `rules.ts` padaju četiri testa. Ukupno lokalno: 76 testova.

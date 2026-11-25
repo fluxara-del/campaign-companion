@@ -124,6 +124,16 @@ describe("pravila: resursi i novac", () => {
   });
 });
 
+describe("vlastiti ključevi kolekcija", () => {
+  it("pravila i reducer ne vide naslijeđena svojstva", () => {
+    expect(code(() => decide(state(), c("ApplyHealing", { characterId: "toString", amount: 1 }), ctx))).toBe("rule_violation");
+    expect(() =>
+      applyEvent(state(), { type: "TemporaryHpSet", payload: { characterId: "constructor", offered: 1, mode: "replace", tempBefore: 0, tempAfter: 1 } }),
+    ).toThrow(ReplayDivergenceError);
+    expect(({} as Record<string, unknown>).hpTemp).toBeUndefined();
+  });
+});
+
 describe("reducer", () => {
   it("otkriva odstupanje vrijednosti „prije” umjesto da ga prepiše", () => {
     const s = state();

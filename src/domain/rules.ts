@@ -1,6 +1,7 @@
 import type { BatchCommand } from "./commands";
 import { DomainError } from "./errors";
 import { EVENT_SCHEMA_VERSION, type EventDraft } from "./events";
+import { getOwn } from "./records";
 import type { CampaignState } from "./state";
 
 export const RULESET = { id: "dnd5e-2024", version: "2024.1-companion.0" } as const;
@@ -26,7 +27,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
   switch (command.type) {
     case "ApplyDamage": {
       const { characterId, amount, damageType } = command.payload;
-      const c = state.characters[characterId];
+      const c = getOwn(state.characters, characterId);
       if (!c) violation(ctx, "Lik ne postoji u ovoj kampanji.", { characterId });
       if (c.hpCurrent === 0) {
         ruling(ctx, "Šteta liku na 0 HP (death save neuspjesi, masivna šteta) nije automatizirana.", { characterId });
@@ -57,7 +58,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
 
     case "ApplyHealing": {
       const { characterId, amount } = command.payload;
-      const c = state.characters[characterId];
+      const c = getOwn(state.characters, characterId);
       if (!c) violation(ctx, "Lik ne postoji u ovoj kampanji.", { characterId });
       if (c.hpMax === null) ruling(ctx, "Maksimalni HP je nepoznat; liječenje nema granicu.", { characterId });
       const hpAfter = Math.min(c.hpMax, c.hpCurrent + amount);
@@ -72,7 +73,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
 
     case "SetTemporaryHp": {
       const { characterId, amount, mode } = command.payload;
-      const c = state.characters[characterId];
+      const c = getOwn(state.characters, characterId);
       if (!c) violation(ctx, "Lik ne postoji u ovoj kampanji.", { characterId });
       // 2024: privremeni HP se ne zbraja; igrač izričito bira zadržati postojeće ili uzeti nove.
       const tempAfter = mode === "replace" ? amount : c.hpTemp;
@@ -87,7 +88,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
 
     case "ConsumeResource": {
       const { resourcePoolId, amount } = command.payload;
-      const p = state.resourcePools[resourcePoolId];
+      const p = getOwn(state.resourcePools, resourcePoolId);
       if (!p) violation(ctx, "Resurs ne postoji u ovoj kampanji.", { resourcePoolId });
       if (p.current === null) ruling(ctx, "Stanje resursa je nepoznato.", { resourcePoolId });
       if (p.current < amount) {
@@ -104,7 +105,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
 
     case "SpendCurrency": {
       const { walletId, amountMinor, reason } = command.payload;
-      const w = state.wallets[walletId];
+      const w = getOwn(state.wallets, walletId);
       if (!w) violation(ctx, "Novčanik ne postoji u ovoj kampanji.", { walletId });
       if (w.amountMinor === null) ruling(ctx, "Stanje novčanika je nepoznato.", { walletId });
       if (w.amountMinor < amountMinor) {
