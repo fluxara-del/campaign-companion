@@ -106,4 +106,4 @@ Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere
 
 **Supervisor (pokriće):** isti skup od 7 ulaza za količinu (izostavljena, `null`, 0, 3, tekst, negativna, decimalna) provjerava se za opremu **i** za predmete izvan inventara; prihvaćene vrijednosti čitaju se natrag iz SQLitea, a odbijene blokiraju uvoz s `item_quantity` na točnom izvoru.
 
-Hash sadržaja stvarne kampanje nepromijenjen (`d58c7541…`). Ukupno lokalno: 124 testa.
+Testirane kombinacije spell slota (čitano iz SQLitea): (null, 2), (1, null), (null, null), (0, 2), (0, null) i izostavljen max; `ConsumeResource` daje `needs_ruling` za nepoznat current, `rule_violation` za poznatu nulu i uspijeva za poznatu vrijednost > 0. Hash sadržaja stvarne kampanje nepromijenjen (`d58c7541…`). Ukupno lokalno: 127 testova.

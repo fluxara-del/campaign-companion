@@ -518,8 +518,11 @@ describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
   };
 
   it.each([
-    ["current nepoznat", { current: null, max: 2 }, { current: null, max: 2 }],
-    ["max nepoznat", { current: 0, max: null }, { current: 0, max: null }],
+    ["(null, 2): current nepoznat", { current: null, max: 2 }, { current: null, max: 2 }],
+    ["(1, null): max nepoznat", { current: 1, max: null }, { current: 1, max: null }],
+    ["(null, null): oba nepoznata", { current: null, max: null }, { current: null, max: null }],
+    ["(0, 2): nula nije nepoznato", { current: 0, max: 2 }, { current: 0, max: 2 }],
+    ["(0, null): nula uz nepoznat max", { current: 0, max: null }, { current: 0, max: null }],
     ["max izostavljen", { current: 1 }, { current: 1, max: null }],
   ])("%s → resurs postoji s očuvanim null", (_l, slot, expected) => {
     const r = run(makeSource(setSlot(slot)));
@@ -527,7 +530,7 @@ describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
     const db = openDatabase(r.dbPath!);
     const pool = db.prepare(`SELECT id, current, max FROM "ResourcePool" WHERE resourceKey = 'spell-slot-1'`).get() as { id: string; current: number | null; max: number | null };
     expect({ current: pool.current, max: pool.max }).toEqual(expected);
-    if (expected.current === null) {
+    {
       let code = "";
       try {
         executeBatch(db, { actorId: "owner" }, {
@@ -540,7 +543,8 @@ describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
       } catch (e) {
         code = (e as { code?: string }).code ?? "";
       }
-      expect(code).toBe("needs_ruling");
+      // Nepoznato → needs_ruling; poznata nula → rule_violation; poznata vrijednost > 0 → potrošeno.
+      expect(code).toBe(expected.current === null ? "needs_ruling" : expected.current === 0 ? "rule_violation" : "");
     }
     db.close();
   }, 60_000);
