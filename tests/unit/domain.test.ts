@@ -45,6 +45,11 @@ describe("kanonski JSON", () => {
     expect(canonicalHash([1, 2])).not.toBe(canonicalHash([2, 1]));
   });
 
+  it("način \"any\" (uvoz) dopušta konačne decimalne brojeve kao u RFC 8785", () => {
+    expect(canonicalJson({ m: 3.5, n: 1e21, z: -0 }, { numbers: "any" })).toBe('{"m":3.5,"n":1e+21,"z":0}');
+    expect(() => canonicalJson(Number.NaN, { numbers: "any" })).toThrow();
+  });
+
   it("odbija decimalne brojeve i nepodržane tipove", () => {
     expect(() => canonicalJson(1.5)).toThrow();
     expect(() => canonicalJson({ f: () => 1 })).toThrow();

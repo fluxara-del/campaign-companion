@@ -3,6 +3,9 @@ import { createCampaign } from "@/server/store/campaign-setup";
 import type { Db } from "@/server/store/connection";
 import { IMPORTER_VERSION, type ImportPlan, type SourceManifest } from "./types";
 
+/** Izvorni podaci smiju sadržavati decimalne brojeve (npr. masa); domena ih ne koristi. */
+const ANY = { numbers: "any" } as const;
+
 /**
  * Upisuje plan u (probnu) bazu u jednoj transakciji: kampanja, lik, resursi, novčanici,
  * predmeti, profil, registri, legacy događaji, dokumenti, zapis uvoza i baseline.
@@ -26,7 +29,7 @@ export function writeImport(
         meta.importBatchId,
         cid,
         IMPORTER_VERSION,
-        canonicalJson(manifest),
+        canonicalJson(manifest, ANY),
         meta.manifestHash,
         meta.contentHash,
         plan.legacy.stateVersion,
@@ -42,7 +45,7 @@ export function writeImport(
       );
       const bool = (b: boolean | null) => (b === null ? null : b ? 1 : 0);
       for (const it of plan.items) {
-        insItem.run(it.id, cid, it.name, it.quantity, it.ownerRef, it.holderRef, it.location, bool(it.equipped), bool(it.attuned), it.stateNote, canonicalJson(it.attributes), it.sourceRef);
+        insItem.run(it.id, cid, it.name, it.quantity, it.ownerRef, it.holderRef, it.location, bool(it.equipped), bool(it.attuned), it.stateNote, canonicalJson(it.attributes, ANY), it.sourceRef);
       }
       const setContainer = tx.prepare(`UPDATE "ItemInstance" SET containerItemId = ? WHERE campaignId = ? AND id = ?`);
       for (const it of plan.items) if (it.containerItemId) setContainer.run(it.containerItemId, cid, it.id);
@@ -51,7 +54,7 @@ export function writeImport(
         tx.prepare(`INSERT INTO "CharacterProfile" (campaignId, characterId, profileJson, sourceRef) VALUES (?, ?, ?, ?)`).run(
           cid,
           plan.profile.characterId,
-          canonicalJson(plan.profile.data),
+          canonicalJson(plan.profile.data, ANY),
           plan.profile.sourceRef,
         );
       }
@@ -59,7 +62,7 @@ export function writeImport(
       const insEntity = tx.prepare(
         `INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      for (const e of plan.entities) insEntity.run(e.id, cid, e.kind, e.name, e.status, e.visibility, canonicalJson(e.data), e.sourceRef);
+      for (const e of plan.entities) insEntity.run(e.id, cid, e.kind, e.name, e.status, e.visibility, canonicalJson(e.data, ANY), e.sourceRef);
 
       const insLegacy = tx.prepare(
         `INSERT INTO "LegacyEvent" (campaignId, legacyId, position, sessionId, legacyStateVersion, type, title, rawJson, rawSha256, sourceFile, sourceLine, importBatchId)

@@ -89,3 +89,13 @@ Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere
 **Rješenje:** završna provjera koristi isti `readVerified` kao izrada kopije (provjera komponenti → otvaranje → `fstat` → ponovna provjera → isti `dev`/`ino` → čitanje iz opisnika). Nestanak datoteke, veza, promjena identiteta, neuspjelo otvaranje ili nedostupan korijen izvora daju `source_changed_during_import` i status `blocked`.
 
 **Dokaz:** test „zamjena putanje tijekom završnog hashiranja” mijenja `npcs/` u junction prema datoteci s **identičnim bajtovima** kao original: kad bi provjera pročitala zamjensku datoteku, hash bi se poklopio i promjena se ne bi prijavila; prijava `source_changed_during_import` dokazuje da sadržaj nije pročitan. Varijanta nakon otvaranja: POSIX otkriva, NTFS odbija preimenovanje (`EPERM`). Dodatni test: nestanak datoteke tijekom provjere blokira uvoz. Kontrolna provjera: bez ponovne provjere i usporedbe identiteta padaju test izrade kopije i test završne provjere. Ukupno lokalno: 100 testova.
+
+## 8. Codex P2 na `c653d55`: izričito nepoznata količina
+
+**Nalaz:** `"quantity": null` u opremi lika blokirao je uvoz, iako je izostavljena količina i `null` kod vanjskih predmeta već značila „nepoznato”.
+
+**Rješenje:** izostavljena ili `null` količina = nepoznato (`ItemInstance.quantity` NULL) za sve predmete; svaka druga vrijednost mora biti cijeli broj ≥ 0, inače `item_quantity` blokira uvoz (prije je kod vanjskih predmeta neispravna vrijednost tiho postajala `null`).
+
+**Usput otkriveno testom:** decimalni broj bilo gdje u izvornim podacima (npr. `massLb: 3.5`) rušio je uvoz jer je kanonski hash dopuštao samo cijele brojeve. Kanonski JSON sada ima način `numbers: "any"` (konačni brojevi zapisani kao u RFC 8785) koji koristi samo uvoz; domena i dalje dopušta isključivo cijele brojeve. Hash sadržaja stvarne kampanje nije se promijenio (`d58c7541…`).
+
+**Dokaz:** testovi „izričito null se čuva”, „tekst/negativna/decimalna količina blokira”, „decimalni brojevi u izvornim podacima ne ruše uvoz” i unit test za način `any`. Ukupno lokalno: 106 testova.

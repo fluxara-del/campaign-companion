@@ -188,6 +188,16 @@ export function buildImportPlan(
   }
 
   // --- Predmeti: posjed (equipment) i predmeti izvan inventara.
+  // Izostavljena ili izričito `null` količina = nepoznato; svaka druga vrijednost mora biti cijeli broj ≥ 0.
+  const itemQuantity = (value: unknown, src: string): number | null => {
+    if (value === undefined || value === null) return null;
+    const n = int(value);
+    if (n === null || n < 0) {
+      findings.push({ code: "item_quantity", severity: "error", message: "Količina nije cijeli broj ≥ 0.", source: src });
+      return null;
+    }
+    return n;
+  };
   const items: ItemRow[] = [];
   const equipment = Array.isArray(character.equipment) ? character.equipment : [];
   equipment.forEach((raw, i) => {
@@ -196,8 +206,7 @@ export function buildImportPlan(
       findings.push({ code: "item_shape", severity: "error", message: "Predmet bez imena.", source: src });
       return;
     }
-    const quantity = raw.quantity === undefined ? null : int(raw.quantity);
-    if (raw.quantity !== undefined && quantity === null) findings.push({ code: "item_quantity", severity: "error", message: "Količina nije cijeli broj.", source: src });
+    const quantity = itemQuantity(raw.quantity, src);
     const id = `${pcId}:item:${pad(i + 1)}`;
     items.push({
       id,
@@ -252,7 +261,7 @@ export function buildImportPlan(
     items.push({
       id,
       name: str(raw.name)!,
-      quantity: raw.quantity === undefined ? null : int(raw.quantity),
+      quantity: itemQuantity(raw.quantity, src),
       ownerRef: str(raw.ownerId),
       holderRef: str(raw.holderId) ?? str(raw.custody),
       location: str(raw.location),

@@ -422,3 +422,47 @@ describe("Završna provjera izvora koristi zaštićeno čitanje", () => {
     expect(r.report.findings.some((f) => f.code === "source_changed_during_import" && f.source === "quests/quests.json")).toBe(true);
   }, 60_000);
 });
+
+describe("Količina predmeta", () => {
+  const setQty = (index: number, value: unknown, key: "equipment" | "externalItems" = "equipment") => (d: string) => {
+    const f = path.join(d, "state", "character.json");
+    const c = JSON.parse(readFileSync(f, "utf8"));
+    c[key][index].quantity = value;
+    writeFileSync(f, JSON.stringify(c));
+  };
+
+  it("izričito null (nepoznato) se čuva i ne blokira uvoz", () => {
+    const r = run(makeSource(setQty(0, null)));
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    expect((db.prepare(`SELECT quantity FROM "ItemInstance" WHERE name = 'Mač'`).get() as { quantity: number | null }).quantity).toBeNull();
+    db.close();
+  }, 60_000);
+
+  it("decimalni brojevi u izvornim podacima (npr. masa) ne ruše uvoz i čuvaju se doslovno", () => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        c.equipment[0].massLb = 3.5;
+        c.heightM = 1.82;
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const attrs = JSON.parse((db.prepare(`SELECT attributesJson FROM "ItemInstance" WHERE name = 'Mač'`).get() as { attributesJson: string }).attributesJson);
+    expect(attrs.massLb).toBe(3.5);
+    db.close();
+  }, 60_000);
+
+  it.each([
+    ["tekst u inventaru", setQty(0, "dva")],
+    ["negativna u inventaru", setQty(0, -1)],
+    ["decimalna izvan inventara", setQty(0, 1.5, "externalItems")],
+  ])("%s blokira uvoz", (_l, mutate) => {
+    const r = run(makeSource(mutate));
+    expect(r.report.status).toBe("blocked");
+    expect(r.report.findings.some((f) => f.code === "item_quantity")).toBe(true);
+  }, 60_000);
+});

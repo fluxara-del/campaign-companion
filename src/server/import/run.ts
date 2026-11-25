@@ -31,7 +31,7 @@ export type TrialImportResult = { report: ImportReport; generationDir: string; d
 
 /** Hash sadržaja plana: ne ovisi o vremenu ni generaciji, pa dokazuje determinizam. */
 export function planContentHash(plan: ImportPlan): string {
-  return canonicalHash(plan);
+  return canonicalHash(plan, { numbers: "any" });
 }
 
 /**
@@ -52,7 +52,7 @@ export function runTrialImport(o: TrialImportOptions): TrialImportResult {
   const findings: Finding[] = [];
   const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot, o.testHooks?.snapshot);
   findings.push(...snapFindings);
-  const manifestHash = canonicalHash(manifest);
+  const manifestHash = canonicalHash(manifest, { numbers: "any" });
 
   let plan: ImportPlan | null = null;
   if (!findings.some((f) => f.severity === "error")) {
