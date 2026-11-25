@@ -1,0 +1,12 @@
+{
+  "campaignId": "UZR-001",
+  "campaignName": "Sintetički uzorak",
+  "stateVersion": 2,
+  "lastEventId": "UZR-S001-E002",
+  "playerCharacterId": "PC-001",
+  "activeQuestIds": ["Q-002"],
+  "companions": ["NPC-001"],
+  "sceneParticipantIds": ["PC-001", "NPC-001"],
+  "groupFunds": { "gp": 5, "purpose": "Namjenska sredstva za probu", "sourceNpcId": "NPC-001", "personalFunds": false },
+  "personalAndGroupFundsTotalGp": 26
+}

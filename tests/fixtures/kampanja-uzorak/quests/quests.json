@@ -1,0 +1,1 @@
+{ "quests": [ { "id": "Q-001", "title": "Završeno", "status": "completed" }, { "id": "Q-002", "title": "Otvoreno", "status": "active" } ] }

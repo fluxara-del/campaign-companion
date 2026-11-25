@@ -21,7 +21,12 @@ export type CampaignSetup = {
 export function createCampaign(
   db: Db,
   setup: CampaignSetup,
-  opts: { now?: string; source?: "synthetic" | "import" } = {},
+  opts: {
+    now?: string;
+    source?: "synthetic" | "import";
+    /** Dodatni upisi (npr. uvezeni predmeti, legacy događaji) u istoj transakciji, prije baseline-a. */
+    extra?: (db: Db) => void;
+  } = {},
 ): { baselineHash: string } {
   const now = opts.now ?? new Date().toISOString();
   return db
@@ -51,6 +56,8 @@ export function createCampaign(
       for (const w of setup.wallets) {
         insWallet.run(w.id, setup.id, w.ownerCharacterId, w.purpose, w.label, w.currency, w.amountMinor);
       }
+
+      opts.extra?.(db);
 
       const { snapshotHash } = writeBaseline(db, setup.id, opts.source ?? "synthetic", now);
       return { baselineHash: snapshotHash };

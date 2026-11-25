@@ -28,4 +28,4 @@ Claude Code implementira zadatke iz GitHub Issuea prema `docs/planning/02-specif
 
 ## Korisne naredbe
 
-`npm run dev`, `npm run test:unit`, `npm run test:db`, `npm run db:migrate:dev`, `npm run db:backup|db:verify|db:restore`. Pregled: `README.md`, `AGENTS.md`, `docs/`.
+`npm run dev`, `npm run test:unit`, `npm run test:db`, `npm run db:migrate:dev`, `npm run db:backup|db:verify|db:restore`, `npm run import:trial -- --source <kampanja>` (izvor samo čita, piše isključivo u `import-sandbox/`). Pregled: `README.md`, `AGENTS.md`, `docs/`.
