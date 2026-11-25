@@ -319,7 +319,10 @@ export function buildImportPlan(
   if (character.level !== undefined && character.level !== null && (level === null || level < 1 || level > 20)) {
     findings.push({ code: "level_value", severity: "error", message: "Razina nije cijeli broj 1–20.", source: "state/character.json#level" });
   }
-  const pb = level !== null && level >= 1 && level <= 20 ? proficiencyBonusForLevel(level) : null;
+  const levelPb = level !== null && level >= 1 && level <= 20 ? proficiencyBonusForLevel(level) : null;
+  const recordedPb = int(character.proficiencyBonus);
+  /** Bonus kojim se izvode proficiencyji: zabilježeni ima prednost pred izračunom po razini. */
+  const pb = recordedPb ?? levelPb;
   const mod = (a: Ability) => (abilities[a] === null ? null : abilityModifier(abilities[a]!));
   const modifiers: StatModifierState[] = [];
   const importedOverride = (target: string, value: number, reason: string, src: string) => {
@@ -332,7 +335,11 @@ export function buildImportPlan(
   for (const a of ABILITIES) {
     const total = int(saves[a]);
     const m = mod(a);
-    if (total === null || m === null || pb === null) continue;
+    if (total === null) continue;
+    if (m === null || pb === null) {
+      importedOverride(`save:${a}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", `state/character.json#savingThrows.${a}`);
+      continue;
+    }
     if (total - m === pb) saveProficiencies.push(a);
     else if (total - m !== 0) importedOverride(`save:${a}`, total, "Uvezena vrijednost (izvor ne navodi izračun).", `state/character.json#savingThrows.${a}`);
   }
@@ -351,7 +358,11 @@ export function buildImportPlan(
       continue;
     }
     const m = mod(ability);
-    if (total === null || m === null || pb === null) continue;
+    if (total === null) continue;
+    if (m === null || pb === null) {
+      importedOverride(`skill:${skill}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", src);
+      continue;
+    }
     if (total - m === pb) skillProficiencies[skill] = "proficient";
     else if (total - m === 2 * pb) skillProficiencies[skill] = "expertise";
     else if (total - m !== 0) importedOverride(`skill:${skill}`, total, "Uvezena vrijednost (izvor ne navodi izračun).", src);
@@ -360,8 +371,14 @@ export function buildImportPlan(
     findings.push({ code: "skills_unlisted_none", severity: "info", message: "Vještine koje izvor ne navodi tretiraju se bez proficiencyja." });
   }
 
-  const recordedPb = int(character.proficiencyBonus);
-  if (recordedPb !== null && pb !== null && recordedPb !== pb) importedOverride("proficiencyBonus", recordedPb, "Uvezena vrijednost.", "state/character.json#proficiencyBonus");
+  if (recordedPb !== null && recordedPb !== levelPb) {
+    importedOverride(
+      "proficiencyBonus",
+      recordedPb,
+      levelPb === null ? "Uvezena vrijednost; razina nije poznata." : `Uvezena vrijednost; izračun po razini daje ${levelPb}.`,
+      "state/character.json#proficiencyBonus",
+    );
+  }
 
   const recordedInit = int(character.initiative);
   const dexMod = mod("DEX");

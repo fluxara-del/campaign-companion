@@ -37,3 +37,12 @@ Desktop/390 px/tipkovnica, vidljivo stanje spremanja i konflikti u sučelju (3b,
 | P2: stari concentration save može prekinuti novu koncentraciju | `Concentration.instanceId`, `RollRequest.concentrationInstanceId`; završetak koncentracije poništava njezine otvorene zahtjeve (`cancelled`), a rezultat djeluje samo na instancu koja ga je otvorila | tri testa „P2 …” (druga čarolija, ponovno bacanje iste, dva zahtjeva) |
 
 Migracija Faze 3 (nespojena) ponovno je generirana s novim stupcima i CHECK-ovima (`status ∈ pending/resolved/cancelled`, `total` samo kod riješenih, concentration save mora imati instancu). Ukupno 151 test.
+
+## Codex pregled `0682a58`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P2: uz nepoznatu razinu zabilježeni saveovi i vještine se gube (sheet prikazuje drugi broj) | Kad zbroj postoji, a proficiency se ne može izvesti, zbroj se čuva kao override s razlogom | „Uvezeni zbrojevi ostaju jednaki zabilježenima”: nepoznata razina |
+| P2: override proficiency bonusa nije korišten pri izvođenju | Efektivni PB = zabilježeni (ako postoji) ili po razini; isti se koristi za saveove, vještine i atribut čaranja; razlika ili nepoznata razina → override bonusa | isti test: bonus 3 uz razinu 2; nepoznata razina uz bonus 2 |
+
+Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijednostima koje sheet izračuna nakon uvoza. Kontrolna provjera: sa starim mapiranjem padaju tri varijante. Ukupno 155 testova.

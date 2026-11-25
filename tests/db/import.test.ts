@@ -582,3 +582,40 @@ describe("Faza 3: uvoz trajnih podataka lika", () => {
     expect(r.report.findings.some((f) => f.code === "spellcasting_inferred")).toBe(true);
   }, 60_000);
 });
+
+describe("Uvezeni zbrojevi ostaju jednaki zabilježenima (Codex P2 na 0682a58)", () => {
+  const variants: [string, (c: Record<string, unknown>) => void][] = [
+    ["izvorni podaci", () => {}],
+    ["nepoznata razina", (c) => (c.level = null)],
+    ["zabilježeni proficiency bonus 3 uz razinu 2", (c) => (c.proficiencyBonus = 3)],
+    ["nepoznata razina i zabilježeni bonus 2", (c) => {
+      c.level = null;
+      c.proficiencyBonus = 2;
+    }],
+  ];
+  it.each(variants)("%s: saveovi, vještine, spell DC i napad u sheetu = zabilježeni", async (_l, mutate) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const d = deriveSheet(loadState(db, "UZR-001"), "PC-001")!;
+    db.close();
+    const src = JSON.parse(readFileSync(path.join(r.generationDir, "source", "state", "character.json"), "utf8"));
+    for (const [a, total] of Object.entries(src.savingThrows as Record<string, number>)) {
+      expect(d.saves[a as "STR"].value, `save ${a}`).toBe(total);
+    }
+    for (const [skill, total] of Object.entries(src.skills as Record<string, number>)) {
+      expect(d.skills[skill]!.value, `skill ${skill}`).toBe(total);
+    }
+    expect(d.spellSaveDc.value).toBe(src.spellSaveDC);
+    expect(d.spellAttack.value).toBe(src.spellAttackBonus);
+  }, 60_000);
+});
