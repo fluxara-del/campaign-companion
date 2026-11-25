@@ -107,19 +107,19 @@ export function applyEvent(state: CampaignState, event: DomainEventBody): Campai
     }
     case "ConcentrationStarted": {
       if (getOwn(state.concentration, event.payload.characterId)) throw new ReplayDivergenceError("Koncentracija već postoji.");
-      setOwn(state.concentration, event.payload.characterId, { characterId: event.payload.characterId, spellSelectionId: event.payload.spellSelectionId });
+      setOwn(state.concentration, event.payload.characterId, { characterId: event.payload.characterId, spellSelectionId: event.payload.spellSelectionId, instanceId: event.payload.instanceId });
       return state;
     }
     case "ConcentrationEnded": {
       const cur = getOwn(state.concentration, event.payload.characterId);
-      expectEqual("concentration", cur?.spellSelectionId ?? null, event.payload.spellSelectionId);
+      expectEqual("concentration", cur ? { s: cur.spellSelectionId, i: cur.instanceId } : null, { s: event.payload.spellSelectionId, i: event.payload.instanceId });
       delete state.concentration[event.payload.characterId];
       return state;
     }
     case "RollRequested": {
       const p = event.payload;
       if (getOwn(state.rollRequests, p.rollRequestId)) throw new ReplayDivergenceError("Zahtjev već postoji.");
-      setOwn(state.rollRequests, p.rollRequestId, { id: p.rollRequestId, characterId: p.characterId, kind: p.kind, dc: p.dc, reason: p.reason, status: "pending", total: null, outcome: null });
+      setOwn(state.rollRequests, p.rollRequestId, { id: p.rollRequestId, characterId: p.characterId, kind: p.kind, dc: p.dc, reason: p.reason, status: "pending", total: null, outcome: null, concentrationInstanceId: p.concentrationInstanceId });
       return state;
     }
     case "RollRequestResolved": {
@@ -129,6 +129,13 @@ export function applyEvent(state: CampaignState, event: DomainEventBody): Campai
       r.status = "resolved";
       r.total = event.payload.total;
       r.outcome = event.payload.outcome;
+      return state;
+    }
+    case "RollRequestCancelled": {
+      const r = getOwn(state.rollRequests, event.payload.rollRequestId);
+      if (!r) throw new ReplayDivergenceError("Nepoznat zahtjev za bacanje.");
+      expectEqual("roll status", r.status, "pending");
+      r.status = "cancelled";
       return state;
     }
     case "ConditionApplied": {

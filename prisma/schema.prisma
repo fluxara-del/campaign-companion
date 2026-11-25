@@ -444,6 +444,8 @@ model Concentration {
   campaignId       String
   characterId      String
   spellSelectionId String
+  /// Identitet ove instance koncentracije (zahtjevi za save vežu se uz nju)
+  instanceId       String
 
   character Character      @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
   spell     SpellSelection @relation(fields: [campaignId, spellSelectionId], references: [campaignId, id], onDelete: Restrict)
@@ -460,10 +462,12 @@ model RollRequest {
   kind        String
   dc          Int
   reason      String
-  /// pending | resolved
+  /// pending | resolved | cancelled
   status      String
   total       Int?
   outcome     String?
+  /// Instanca koncentracije na koju se zahtjev odnosi
+  concentrationInstanceId String?
 
   character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
 

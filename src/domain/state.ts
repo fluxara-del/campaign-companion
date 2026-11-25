@@ -81,7 +81,7 @@ export type ConditionState = {
   durationNote: string | null;
 };
 
-export type ConcentrationState = { characterId: string; spellSelectionId: string };
+export type ConcentrationState = { characterId: string; spellSelectionId: string; instanceId: string };
 
 export type RollRequestState = {
   id: string;
@@ -89,9 +89,10 @@ export type RollRequestState = {
   kind: "concentration_save";
   dc: number;
   reason: string;
-  status: "pending" | "resolved";
+  status: "pending" | "resolved" | "cancelled";
   total: number | null;
   outcome: "maintained" | "broken" | "moot" | null;
+  concentrationInstanceId: string | null;
 };
 
 export type ItemState = {

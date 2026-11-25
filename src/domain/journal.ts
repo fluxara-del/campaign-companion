@@ -45,6 +45,8 @@ export function describeEvent(e: DomainEventBody): string {
       return `Zahtjev za bacanje: ${e.payload.reason}, DC ${e.payload.dc}.`;
     case "RollRequestResolved":
       return `Bacanje ${e.payload.total} protiv DC ${e.payload.dc}: ${e.payload.outcome === "maintained" ? "koncentracija zadržana" : e.payload.outcome === "broken" ? "koncentracija prekinuta" : "bez učinka (nema koncentracije)"}.`;
+    case "RollRequestCancelled":
+      return `Poništen zahtjev za bacanje: ${e.payload.reason}`;
     case "ConditionApplied":
       return `Uvjet ${e.payload.name} (${e.payload.source}).`;
     case "ConditionRemoved":

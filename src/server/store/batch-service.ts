@@ -108,7 +108,7 @@ function runInTransaction(
 
   // 5) Pravila redom naredbi; svaka naredba vidi stanje nakon prethodnih.
   const before = loadState(db, campaignId);
-  const knownHolderRefs = loadKnownHolderRefs(db, campaignId);
+  const knownHolderRefs = loadKnownHolderRefs(db, campaignId, role);
   const working = cloneState(before);
   const drafts: { commandId: string; draft: EventDraft }[] = [];
   batch.commands.forEach((command, commandIndex) => {

@@ -27,6 +27,24 @@ const mechanical = { schemaVersion: EVENT_SCHEMA_VERSION, visibility: "player", 
 const permanent = mechanical;
 
 /**
+ * Završetak koncentracije: događaj završetka i poništenje svih još otvorenih zahtjeva za save
+ * vezanih uz tu instancu (stari rezultat nikad ne smije djelovati na novu koncentraciju).
+ */
+function endConcentration(state: CampaignState, characterId: string, reason: string, exceptRollId: string | null = null): EventDraft[] {
+  const cur = getOwn(state.concentration, characterId);
+  if (!cur) return [];
+  const events: EventDraft[] = [
+    { ...mechanical, type: "ConcentrationEnded", payload: { characterId, spellSelectionId: cur.spellSelectionId, instanceId: cur.instanceId, reason } },
+  ];
+  for (const r of Object.values(state.rollRequests)
+    .filter((x) => x.status === "pending" && x.concentrationInstanceId === cur.instanceId && x.id !== exceptRollId)
+    .sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    events.push({ ...mechanical, type: "RollRequestCancelled", payload: { rollRequestId: r.id, characterId, reason: "Koncentracija na koju se zahtjev odnosi je završila." } });
+  }
+  return events;
+}
+
+/**
  * Čista pravila: iz trenutačnog stanja i jedne naredbe izvodi događaje ili baca
  * `rule_violation` / `needs_ruling`. Ne mijenja stanje (to radi reducer).
  * Podržani opseg: ADR-0005. Sve izvan toga je `needs_ruling`, nikad pretpostavka.
@@ -66,14 +84,14 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
       if (conc) {
         if (hpAfter === 0) {
           // 0 HP → nesvjestica (incapacitated) → koncentracija završava.
-          events.push({ ...mechanical, type: "ConcentrationEnded", payload: { characterId, spellSelectionId: conc.spellSelectionId, reason: "Lik je pao na 0 HP." } });
+          events.push(...endConcentration(state, characterId, "Lik je pao na 0 HP."));
         } else {
           // 2024: DC je 10 ili polovica štete (zaokruženo naniže), najviše 30. Rezultat unosi igrač.
           const dc = Math.min(30, Math.max(10, Math.floor(amount / 2)));
           events.push({
             ...mechanical,
             type: "RollRequested",
-            payload: { rollRequestId: ctx.newId(), characterId, kind: "concentration_save", dc, reason: `Concentration save nakon ${amount} štete` },
+            payload: { rollRequestId: ctx.newId(), characterId, kind: "concentration_save", dc, reason: `Concentration save nakon ${amount} štete`, concentrationInstanceId: conc.instanceId },
           });
         }
       }
@@ -242,34 +260,33 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
       events.push({ ...mechanical, type: "SpellCast", payload: { spellSelectionId, characterId: sp.characterId, spellName: sp.name, spellLevel: castLevel, cost: costPayload } });
       if (sp.concentration) {
         // 2024: početak nove koncentracije završava prethodnu.
-        const cur = getOwn(state.concentration, sp.characterId);
-        if (cur) {
-          events.push({ ...mechanical, type: "ConcentrationEnded", payload: { characterId: sp.characterId, spellSelectionId: cur.spellSelectionId, reason: "Započeta nova koncentracija." } });
-        }
-        events.push({ ...mechanical, type: "ConcentrationStarted", payload: { characterId: sp.characterId, spellSelectionId } });
+        events.push(...endConcentration(state, sp.characterId, "Započeta nova koncentracija."));
+        events.push({ ...mechanical, type: "ConcentrationStarted", payload: { characterId: sp.characterId, spellSelectionId, instanceId: ctx.newId() } });
       }
       return events;
     }
 
     case "EndConcentration": {
       const { characterId, reason } = command.payload;
-      const cur = getOwn(state.concentration, characterId);
-      if (!cur) violation(ctx, "Lik ne koncentrira.", { characterId });
-      return [{ ...mechanical, type: "ConcentrationEnded", payload: { characterId, spellSelectionId: cur.spellSelectionId, reason } }];
+      if (!getOwn(state.concentration, characterId)) violation(ctx, "Lik ne koncentrira.", { characterId });
+      return endConcentration(state, characterId, reason);
     }
 
     case "ResolveRollRequest": {
       const { rollRequestId, total } = command.payload;
       const r = getOwn(state.rollRequests, rollRequestId);
       if (!r) violation(ctx, "Zahtjev za bacanje ne postoji.", { rollRequestId });
+      if (r.status === "cancelled") violation(ctx, "Zahtjev je poništen jer je koncentracija završila.", { rollRequestId });
       if (r.status !== "pending") violation(ctx, "Zahtjev je već riješen.", { rollRequestId });
       const cur = getOwn(state.concentration, r.characterId);
-      const outcome = !cur ? "moot" : total >= r.dc ? "maintained" : "broken";
+      // Rezultat djeluje samo na instancu koncentracije koja je zahtjev otvorila.
+      const applies = cur !== undefined && cur.instanceId === r.concentrationInstanceId;
+      const outcome = !applies ? "moot" : total >= r.dc ? "maintained" : "broken";
       const events: EventDraft[] = [
         { ...mechanical, type: "RollRequestResolved", payload: { rollRequestId, characterId: r.characterId, dc: r.dc, total, outcome } },
       ];
-      if (outcome === "broken" && cur) {
-        events.push({ ...mechanical, type: "ConcentrationEnded", payload: { characterId: r.characterId, spellSelectionId: cur.spellSelectionId, reason: `Neuspješan concentration save (${total} < ${r.dc}).` } });
+      if (outcome === "broken") {
+        events.push(...endConcentration(state, r.characterId, `Neuspješan concentration save (${total} < ${r.dc}).`, rollRequestId));
       }
       return events;
     }

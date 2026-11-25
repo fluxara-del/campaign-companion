@@ -299,3 +299,61 @@ describe("Uvjeti i replay", () => {
     expect(r.liveStateVersion).toBe(7);
   });
 });
+
+describe("Codex nalazi na PR-u #16", () => {
+  it("P1: NPC vidljiv samo DM-u nije u player sheetu ni dopušten kao cilj transfera", () => {
+    db.prepare(`INSERT INTO "Member" (campaignId, actorId, role, createdAt) VALUES (?, 'player', 'player', '2026-11-25T00:00:00Z')`).run(CID);
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    const forPlayer = getCharacterSheet(db, { actorId: "player" }, CID, PC).holders.map((h) => h.id);
+    const forViewer = getCharacterSheet(db, { actorId: "viewer" }, CID, PC).holders.map((h) => h.id);
+    const forOwner = sheet().holders.map((h) => h.id);
+    expect(forPlayer).toContain("NPC-1");
+    expect(forPlayer).not.toContain("NPC-TAJNI");
+    expect(forViewer).not.toContain("NPC-TAJNI");
+    expect(forOwner).toContain("NPC-TAJNI");
+    let err: DomainError | null = null;
+    try {
+      run([cmd("TransferItem", { itemId: "dagger", to: { kind: "holder", holderRef: "NPC-TAJNI" } })], { actorId: "player" });
+    } catch (e) {
+      err = e as DomainError;
+    }
+    expect(err?.code).toBe("rule_violation");
+    expect(JSON.stringify({ m: err?.message, d: err?.details })).not.toContain("Tajni zlikovac");
+    // Vlasnik (DM) smije predmet dati DM-only NPC-u.
+    run([cmd("TransferItem", { itemId: "dagger", to: { kind: "holder", holderRef: "NPC-TAJNI" } })]);
+    expect(state().items.dagger!.holderRef).toBe("NPC-TAJNI");
+  });
+
+  it("P2: stari concentration save ne djeluje na novu koncentraciju (druga čarolija)", () => {
+    run([cmd("ResolveCast", { spellSelectionId: "bless", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 4, damageType: null })]);
+    const oldReq = sheet().pendingRolls[0]!;
+    run([cmd("ResolveCast", { spellSelectionId: "sof", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
+    expect(sheet().pendingRolls).toEqual([]);
+    expect(state().rollRequests[oldReq.id]!.status).toBe("cancelled");
+    expect(code(() => run([cmd("ResolveRollRequest", { rollRequestId: oldReq.id, total: 1 }, "roll_result")]))).toBe("rule_violation");
+    expect(sheet().concentration?.spellName).toBe("Shield of Faith");
+  });
+
+  it("P2: ni nakon prekida i ponovnog bacanja iste čarolije", () => {
+    run([cmd("ResolveCast", { spellSelectionId: "bless", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 4, damageType: null })]);
+    const oldReq = sheet().pendingRolls[0]!;
+    run([cmd("EndConcentration", { characterId: PC, reason: "Igrač prekida" })]);
+    run([cmd("ResolveCast", { spellSelectionId: "bless", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
+    expect(code(() => run([cmd("ResolveRollRequest", { rollRequestId: oldReq.id, total: 1 }, "roll_result")]))).toBe("rule_violation");
+    expect(sheet().concentration?.spellName).toBe("Bless");
+    expect(verifyReplay(db, CID).ok).toBe(true);
+  });
+
+  it("P2: dva otvorena zahtjeva iste koncentracije — neuspjeh jednog poništava drugi", () => {
+    run([cmd("ResolveCast", { spellSelectionId: "bless", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 2, damageType: null })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 2, damageType: null })]);
+    const [a, b] = sheet().pendingRolls;
+    run([cmd("ResolveRollRequest", { rollRequestId: a!.id, total: 3 }, "roll_result")]);
+    expect(sheet().concentration).toBeNull();
+    expect(state().rollRequests[b!.id]!.status).toBe("cancelled");
+    expect(state().rollRequests[a!.id]).toMatchObject({ status: "resolved", outcome: "broken" });
+  });
+});

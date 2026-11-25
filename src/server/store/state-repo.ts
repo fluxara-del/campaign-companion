@@ -92,11 +92,11 @@ export function loadState(db: Db, campaignId: string): CampaignState {
     db.prepare(`SELECT id, characterId, name, source, durationNote FROM "ActiveCondition" WHERE campaignId = ? ORDER BY id`).all(campaignId) as ConditionState[],
   );
   const concentration: Record<string, ConcentrationState> = {};
-  for (const r of db.prepare(`SELECT characterId, spellSelectionId FROM "Concentration" WHERE campaignId = ? ORDER BY characterId`).all(campaignId) as ConcentrationState[]) {
+  for (const r of db.prepare(`SELECT characterId, spellSelectionId, instanceId FROM "Concentration" WHERE campaignId = ? ORDER BY characterId`).all(campaignId) as ConcentrationState[]) {
     setOwn(concentration, r.characterId, r);
   }
   const rollRequests = rowsById(
-    db.prepare(`SELECT id, characterId, kind, dc, reason, status, total, outcome FROM "RollRequest" WHERE campaignId = ? ORDER BY id`).all(campaignId) as RollRequestState[],
+    db.prepare(`SELECT id, characterId, kind, dc, reason, status, total, outcome, concentrationInstanceId FROM "RollRequest" WHERE campaignId = ? ORDER BY id`).all(campaignId) as RollRequestState[],
   );
   const items = rowsById(
     (
@@ -109,10 +109,20 @@ export function loadState(db: Db, campaignId: string): CampaignState {
   return { format: SNAPSHOT_FORMAT, campaignId, characters, resourcePools, wallets, modifiers, spells, features, conditions, concentration, rollRequests, items };
 }
 
-/** ID-jevi dopuštenih držatelja predmeta: likovi i NPC-evi kampanje. */
-export function loadKnownHolderRefs(db: Db, campaignId: string): Set<string> {
+/** SQL uvjet vidljivosti zapisa registra za ulogu: vlasnik (DM) vidi sve, ostali samo player/shared. */
+export function visibilityClause(role: string): string {
+  return role === "owner" ? "1 = 1" : "visibility IN ('player', 'shared')";
+}
+
+/**
+ * ID-jevi dopuštenih držatelja predmeta: likovi i NPC-evi kampanje koje uloga smije vidjeti
+ * (NPC vidljiv samo DM-u ne može biti cilj transfera igrača ni se otkriti kroz pogrešku).
+ */
+export function loadKnownHolderRefs(db: Db, campaignId: string, role: string): Set<string> {
   const ids = db
-    .prepare(`SELECT id FROM "Character" WHERE campaignId = ? UNION SELECT id FROM "EntityRecord" WHERE campaignId = ? AND kind = 'npc'`)
+    .prepare(
+      `SELECT id FROM "Character" WHERE campaignId = ? UNION SELECT id FROM "EntityRecord" WHERE campaignId = ? AND kind = 'npc' AND ${visibilityClause(role)}`,
+    )
     .all(campaignId, campaignId) as { id: string }[];
   return new Set(ids.map((r) => r.id));
 }
@@ -211,14 +221,14 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
   // Koncentracija (nikad UPDATE: završetak i nova koncentracija)
   for (const [charId, b] of Object.entries(before.concentration)) {
     const a = getOwn(after.concentration, charId);
-    if (!a || a.spellSelectionId !== b.spellSelectionId) {
+    if (!a || a.instanceId !== b.instanceId) {
       mustUpdate(db.prepare(`DELETE FROM "Concentration" WHERE campaignId = ? AND characterId = ?`).run(cid, charId), `koncentracija ${charId}`);
     }
   }
   for (const [charId, a] of Object.entries(after.concentration)) {
     const b = getOwn(before.concentration, charId);
-    if (!b || b.spellSelectionId !== a.spellSelectionId) {
-      db.prepare(`INSERT INTO "Concentration" (campaignId, characterId, spellSelectionId) VALUES (?, ?, ?)`).run(cid, charId, a.spellSelectionId);
+    if (!b || b.instanceId !== a.instanceId) {
+      db.prepare(`INSERT INTO "Concentration" (campaignId, characterId, spellSelectionId, instanceId) VALUES (?, ?, ?, ?)`).run(cid, charId, a.spellSelectionId, a.instanceId);
     }
   }
 
@@ -226,8 +236,8 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
   for (const [id, r] of Object.entries(after.rollRequests)) {
     const b = getOwn(before.rollRequests, id);
     if (!b) {
-      db.prepare(`INSERT INTO "RollRequest" (id, campaignId, characterId, kind, dc, reason, status, total, outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        id, cid, r.characterId, r.kind, r.dc, r.reason, r.status, r.total, r.outcome,
+      db.prepare(`INSERT INTO "RollRequest" (id, campaignId, characterId, kind, dc, reason, status, total, outcome, concentrationInstanceId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, cid, r.characterId, r.kind, r.dc, r.reason, r.status, r.total, r.outcome, r.concentrationInstanceId,
       );
     } else if (!same(b, r)) {
       mustUpdate(db.prepare(`UPDATE "RollRequest" SET status = ?, total = ?, outcome = ? WHERE campaignId = ? AND id = ?`).run(r.status, r.total, r.outcome, cid, id), `zahtjev ${id}`);

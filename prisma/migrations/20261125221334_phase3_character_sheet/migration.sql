@@ -60,6 +60,7 @@ CREATE TABLE "Concentration" (
     "campaignId" TEXT NOT NULL,
     "characterId" TEXT NOT NULL,
     "spellSelectionId" TEXT NOT NULL,
+    "instanceId" TEXT NOT NULL,
 
     PRIMARY KEY ("campaignId", "characterId"),
     CONSTRAINT "Concentration_campaignId_characterId_fkey" FOREIGN KEY ("campaignId", "characterId") REFERENCES "Character" ("campaignId", "id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -77,11 +78,13 @@ CREATE TABLE "RollRequest" (
     "status" TEXT NOT NULL,
     "total" INTEGER,
     "outcome" TEXT,
+    "concentrationInstanceId" TEXT,
     CONSTRAINT "RollRequest_campaignId_characterId_fkey" FOREIGN KEY ("campaignId", "characterId") REFERENCES "Character" ("campaignId", "id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CHECK ("kind" IN ('concentration_save')),
     CHECK ("dc" BETWEEN 1 AND 40),
-    CHECK ("status" IN ('pending','resolved')),
-    CHECK (("status" = 'pending') = ("total" IS NULL))
+    CHECK ("status" IN ('pending','resolved','cancelled')),
+    CHECK (("status" = 'resolved') = ("total" IS NOT NULL)),
+    CHECK ("kind" <> 'concentration_save' OR "concentrationInstanceId" IS NOT NULL)
 );
 
 -- kdz: faza 3 — aditivni stupci lika (bez redefinicije tablice)
@@ -133,15 +136,15 @@ BEGIN
     SELECT RAISE(ABORT, 'ActiveCondition identitet je nepromjenjiv');
 END;
 
-CREATE TRIGGER "RollRequest_immutable_identity" BEFORE UPDATE OF "id", "campaignId", "characterId", "kind", "dc" ON "RollRequest"
+CREATE TRIGGER "RollRequest_immutable_identity" BEFORE UPDATE OF "id", "campaignId", "characterId", "kind", "dc", "concentrationInstanceId" ON "RollRequest"
 BEGIN
     SELECT RAISE(ABORT, 'RollRequest identitet je nepromjenjiv');
 END;
 
 CREATE TRIGGER "RollRequest_resolved_final" BEFORE UPDATE ON "RollRequest"
-WHEN OLD."status" = 'resolved'
+WHEN OLD."status" <> 'pending'
 BEGIN
-    SELECT RAISE(ABORT, 'Riješen zahtjev za bacanje je nepromjenjiv');
+    SELECT RAISE(ABORT, 'Riješen ili poništen zahtjev za bacanje je nepromjenjiv');
 END;
 
 CREATE TRIGGER "FeatureInstance_pool_same_character_ins" BEFORE INSERT ON "FeatureInstance"

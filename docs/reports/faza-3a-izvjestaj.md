@@ -28,3 +28,12 @@ Ukupno 144 testa. Probni uvoz stvarne kampanje: 0 pogrešaka, 0 upozorenja; save
 ## Što ne dokazuje (3b i kasnije)
 
 Desktop/390 px/tipkovnica, vidljivo stanje spremanja i konflikti u sučelju (3b, Playwright); HTTP sloj i autentifikacija (O5); katalog čarolija/predmeta (O1).
+
+## Codex pregled `b3fb208`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: `getCharacterSheet` vraća DM-only NPC-eve u `holders` svakom članu | Vidljivost registra po ulozi (`visibilityClause`): vlasnik vidi sve, ostali samo `player`/`shared`; isto pravilo za dopuštene držatelje u `TransferItem` (igrač ne može ciljati ni otkriti DM-only NPC-a) | „P1: NPC vidljiv samo DM-u …” |
+| P2: stari concentration save može prekinuti novu koncentraciju | `Concentration.instanceId`, `RollRequest.concentrationInstanceId`; završetak koncentracije poništava njezine otvorene zahtjeve (`cancelled`), a rezultat djeluje samo na instancu koja ga je otvorila | tri testa „P2 …” (druga čarolija, ponovno bacanje iste, dva zahtjeva) |
+
+Migracija Faze 3 (nespojena) ponovno je generirana s novim stupcima i CHECK-ovima (`status ∈ pending/resolved/cancelled`, `total` samo kod riješenih, concentration save mora imati instancu). Ukupno 151 test.

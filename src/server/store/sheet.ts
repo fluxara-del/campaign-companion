@@ -15,7 +15,7 @@ import type {
 } from "@/domain/state";
 import type { Actor } from "./batch-service";
 import type { Db } from "./connection";
-import { loadState } from "./state-repo";
+import { loadState, visibilityClause } from "./state-repo";
 
 export type ItemNode = ItemState & { contents: ItemNode[] };
 
@@ -50,7 +50,7 @@ const byName = <T extends { name: string; id: string }>(a: T, b: T) => a.name.lo
 export function getCharacterSheet(db: Db, actor: Actor, campaignId: string, characterId: string): CharacterSheet {
   return db
     .transaction(() => {
-      const member = db.prepare(`SELECT role FROM "Member" WHERE campaignId = ? AND actorId = ?`).get(campaignId, actor.actorId);
+      const member = db.prepare(`SELECT role FROM "Member" WHERE campaignId = ? AND actorId = ?`).get(campaignId, actor.actorId) as { role: string } | undefined;
       if (!member) throw new DomainError("forbidden", "Nemate pristup ovoj kampanji.");
       const state = loadState(db, campaignId);
       const character = getOwn(state.characters, characterId);
@@ -70,7 +70,10 @@ export function getCharacterSheet(db: Db, actor: Actor, campaignId: string, char
         .filter((i) => items.some((x) => x.containerItemId === i.id) || /backpack|ruksak|torb|pouch|kutij|amulet/i.test(i.name))
         .map((i) => ({ id: i.id, name: i.name }));
 
-      const npcs = db.prepare(`SELECT id, name FROM "EntityRecord" WHERE campaignId = ? AND kind = 'npc' ORDER BY name`).all(campaignId) as { id: string; name: string }[];
+      // DM-only NPC-evi vidljivi su samo vlasniku (DM-u); ostalim članovima se ne vraćaju ni ID ni naziv.
+      const npcs = db
+        .prepare(`SELECT id, name FROM "EntityRecord" WHERE campaignId = ? AND kind = 'npc' AND ${visibilityClause(member.role)} ORDER BY name`)
+        .all(campaignId) as { id: string; name: string }[];
       const conc = getOwn(state.concentration, characterId);
 
       return {

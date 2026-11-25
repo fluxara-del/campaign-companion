@@ -93,17 +93,23 @@ export type SpellCast = {
 
 export type ConcentrationStarted = {
   type: "ConcentrationStarted";
-  payload: { characterId: string; spellSelectionId: string };
+  payload: { characterId: string; spellSelectionId: string; instanceId: string };
 };
 
 export type ConcentrationEnded = {
   type: "ConcentrationEnded";
-  payload: { characterId: string; spellSelectionId: string; reason: string };
+  payload: { characterId: string; spellSelectionId: string; instanceId: string; reason: string };
 };
 
 export type RollRequested = {
   type: "RollRequested";
-  payload: { rollRequestId: string; characterId: string; kind: "concentration_save"; dc: number; reason: string };
+  payload: { rollRequestId: string; characterId: string; kind: "concentration_save"; dc: number; reason: string; concentrationInstanceId: string };
+};
+
+/** Zahtjev više nema smisla (npr. koncentracija na koju se odnosi je završila). */
+export type RollRequestCancelled = {
+  type: "RollRequestCancelled";
+  payload: { rollRequestId: string; characterId: string; reason: string };
 };
 
 export type RollRequestResolved = {
@@ -161,6 +167,7 @@ export type DomainEventBody =
   | ConcentrationEnded
   | RollRequested
   | RollRequestResolved
+  | RollRequestCancelled
   | ConditionApplied
   | ConditionRemoved
   | ItemMoved
