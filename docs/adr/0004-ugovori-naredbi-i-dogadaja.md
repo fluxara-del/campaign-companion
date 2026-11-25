@@ -1,6 +1,6 @@
 # ADR-0004: Tipizirani ugovori naredbi i događaja (nacrt)
 
-Status: nacrt za Fazu 1 (dopunjeno 25. 11. 2026. prema supervisor nalazu SR-01: semantika batcha). Izvor: specifikacija §6–§8. Implementacija (zod sheme, Prisma model) dolazi u Fazi 1 nakon odobrenja; ovdje se fiksira oblik ugovora.
+Status: prihvaćeno i implementirano u Fazi 1 (domenski servis, ADR-0006); dopunjeno 25. 11. 2026. prema supervisor nalazu SR-01: semantika batcha). Izvor: specifikacija §6–§8. Implementacija: `src/domain/commands.ts`, `src/server/store/batch-service.ts`.
 
 ## Envelope batcha i naredbe
 
@@ -84,6 +84,8 @@ Unique ograničenja na `BatchReceipt` i `CommandIndex` su posljednja zaštita: a
 | Dva paralelna različita batcha s istom `expectedStateVersion` | Prvi commita; drugi dobiva `409 stale_version` |
 | SQLite zauzet dulje od limita | `503 busy` bez upisa; klijent smije ponoviti **isti** batch (isti `batchId`) |
 | Prekid procesa nakon commita, prije odgovora | Klijent šalje isti batch ili `GET …/batches/:batchId` → spremljeni receipt |
+
+**Pristup potvrdi:** potvrdu batcha (GET i ponavljanje) vidi samo akter koji je batch poslao ili vlasnik kampanje. Ostalim članovima GET vraća `404` kao za nepostojeći batch, a ponavljanje `409 batch_id_reused` bez sadržaja.
 
 Odgovori: `200` receipt (`replayed` true/false); `409` `stale_version` | `batch_id_reused` | `command_id_reused`; `422` neispravno/nepodržano (`needs_ruling`, indeks člana); `403` bez ovlasti; `503` zauzeta baza.
 
