@@ -1,6 +1,9 @@
-// Prisma ORM 7 (zaključano na 7.10.1). Domenski model dolazi u Fazi 1.
-// U Fazi 0 postoji samo infrastrukturna tablica za metapodatke instance,
-// kako bi CI mogao provjeriti lanac migracija od prvog dana.
+// Prisma ORM 7 (zaključano na 7.10.1).
+// Prisma posjeduje shemu i migracije. Kritični put pisanja ide kroz better-sqlite3
+// (BEGIN IMMEDIATE), vidi docs/adr/0006-put-pisanja-sqlite.md.
+// Vremena se spremaju kao ISO 8601 UTC tekst (String) radi jednakog zapisa iz oba sloja.
+// CHECK ograničenja i triggeri za nepromjenjivost dodani su ručno u SQL migracije
+// (Prisma ih ne modelira); `prisma migrate diff` ih ne prijavljuje kao odstupanje.
 
 generator client {
   provider = "prisma-client"
@@ -11,10 +14,201 @@ datasource db {
   provider = "sqlite"
 }
 
-/// Ključ/vrijednost metapodaci instance (npr. id instance, verzija sheme aplikacije).
-/// Nije domenski podatak kampanje.
+/// Ključ/vrijednost metapodaci instance. Nije domenski podatak kampanje.
 model AppMeta {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model Campaign {
+  id             String @id
+  name           String
+  rulesetId      String @default("dnd5e-2024")
+  rulesetVersion String
+  /// Povećava se točno jednom po potvrđenom batchu.
+  stateVersion   Int    @default(0)
+  /// Najveći `seq` događaja u kampanji.
+  lastEventSeq   Int    @default(0)
+  createdAt      String
+
+  members    Member[]
+  characters Character[]
+  pools      ResourcePool[]
+  wallets    Wallet[]
+  receipts   BatchReceipt[]
+  events     DomainEvent[]
+  journal    JournalEntry[]
+  baselines  CampaignBaseline[]
+}
+
+model Member {
+  campaignId String
+  actorId    String
+  /// owner | player | ai_service | viewer
+  role       String
+  createdAt  String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, actorId])
+}
+
+model Character {
+  id         String @id
+  campaignId String
+  name       String
+  hpCurrent  Int
+  /// null = nepoznato
+  hpMax      Int?
+  hpTemp     Int    @default(0)
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  pools    ResourcePool[]
+  wallets  Wallet[]
+
+  @@unique([campaignId, id])
+}
+
+model ResourcePool {
+  id             String  @id
+  campaignId     String
+  characterId    String
+  resourceKey    String
+  /// null = nepoznato (ne 0)
+  current        Int?
+  /// null = nepoznato
+  max            Int?
+  /// short_rest | long_rest | manual | null (nepoznato)
+  rechargePolicy String?
+
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([characterId, resourceKey])
+  @@unique([campaignId, id])
+}
+
+model Wallet {
+  id               String  @id
+  campaignId       String
+  /// null = skupni/namjenski fond bez vlasnika lika
+  ownerCharacterId String?
+  /// personal | group_dedicated
+  purpose          String
+  label            String
+  /// Valuta; iznos je u najmanjoj jedinici (cp).
+  currency         String  @default("cp")
+  /// null = nepoznato
+  amountMinor      Int?
+
+  campaign Campaign   @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  owner    Character? @relation(fields: [campaignId, ownerCharacterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
+}
+
+model BatchReceipt {
+  campaignId         String
+  batchId            String
+  requestHash        String
+  actorId            String
+  stateVersionBefore Int
+  stateVersionAfter  Int
+  firstSeq           Int
+  lastSeq            Int
+  responseJson       String
+  committedAt        String
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  commands CommandIndex[]
+  events   DomainEvent[]
+
+  @@id([campaignId, batchId])
+  @@unique([campaignId, stateVersionAfter])
+}
+
+model CommandIndex {
+  campaignId String
+  commandId  String
+  batchId    String
+  position   Int
+
+  receipt BatchReceipt @relation(fields: [campaignId, batchId], references: [campaignId, batchId], onDelete: Restrict)
+
+  @@id([campaignId, commandId])
+  @@unique([campaignId, batchId, position])
+}
+
+model DomainEvent {
+  id            String  @id
+  campaignId    String
+  seq           Int
+  batchId       String
+  commandId     String
+  type          String
+  schemaVersion Int
+  payloadJson   String
+  /// player | dm_manual | ai_service | import | system
+  actorKind     String
+  actorId       String
+  sourceRef     String?
+  occurredAt    String
+  worldTime     String?
+  /// player | dm | shared
+  visibility    String
+  knowledgeKind String?
+
+  campaign Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  receipt  BatchReceipt       @relation(fields: [campaignId, batchId], references: [campaignId, batchId], onDelete: Restrict)
+  journal  JournalEventLink[]
+
+  @@unique([campaignId, seq])
+  @@index([campaignId, batchId])
+}
+
+model JournalEntry {
+  id         String  @id
+  campaignId String
+  batchId    String?
+  /// manual | projection | summary
+  kind       String
+  title      String?
+  text       String
+  /// player | dm | shared
+  visibility String
+  revision   Int     @default(1)
+  createdAt  String
+
+  campaign Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  events   JournalEventLink[]
+
+  @@index([campaignId, createdAt])
+}
+
+model JournalEventLink {
+  journalEntryId String
+  eventId        String
+
+  entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  event DomainEvent  @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@id([journalEntryId, eventId])
+}
+
+/// Provjereni početni snapshot od kojeg se jamči deterministički replay.
+model CampaignBaseline {
+  id           String @id
+  campaignId   String
+  seq          Int
+  stateVersion Int
+  snapshotJson String
+  snapshotHash String
+  /// synthetic | import
+  source       String
+  createdAt    String
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@unique([campaignId, seq])
 }

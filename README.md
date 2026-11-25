@@ -2,7 +2,7 @@
 
 Privatna, self-hosted web-aplikacija za solo D&D 5e (2024) kampanju *Kronike Devet Zvona*: digitalni character sheet, dnevnik kampanje i integrirani AI Dungeon Master. Sučelje je na hrvatskom, dizajn je originalan, a radi na mobitelu i desktopu.
 
-> **Status: Faza 0 (temelji).** Postoje kostur aplikacije, CI, sigurnosni alati za SQLite i pripremljen (neaktivan) deploy na ZimaOS. Funkcionalnosti kampanje dolaze od Faze 1, nakon odobrenja. Postojeće datoteke kampanje ostaju autoritativne dok se migracija izričito ne potvrdi.
+> **Status: Faza 1 u pregledu (PR).** Postoje shema, domenski servis s batch idempotentnošću, event log, receipt, replay i restore nad sintetičkim podacima. Nema UI-ja, HTTP ruta za pisanje ni AI-ja. Postojeće datoteke kampanje ostaju autoritativne dok se migracija izričito ne potvrdi.
 
 ## Tehnologija (zaključane verzije)
 
@@ -48,7 +48,7 @@ Razvoj ide kroz feature grane i pull requestove prema `main`; CI mora proći pri
 
 - Planiranje: [analiza](docs/planning/01-analiza-ddb.md), [specifikacija](docs/planning/02-specifikacija.md), [razvojni plan](docs/planning/03-razvojni-plan.md), [nedosljednosti i otvorene odluke](docs/planning/NEDOSLJEDNOSTI.md)
 - Odluke: [docs/adr](docs/adr/)
-- Izvještaji: [Faza 0](docs/reports/faza-0-izvjestaj.md)
+- Izvještaji: [Faza 0](docs/reports/faza-0-izvjestaj.md), [Faza 1](docs/reports/faza-1-izvjestaj.md)
 - Pravila za agente: [CLAUDE.md](CLAUDE.md), [AGENTS.md](AGENTS.md)
 - Operacije: [CI/CD](docs/operations/ci-cd.md), [ZimaOS deployment](docs/operations/zimaos-deployment.md), [SQLite sigurnost](docs/operations/sqlite-sigurnost.md), [rollback i restore](docs/operations/rollback-i-restore.md), [tajne i konfiguracija](docs/operations/tajne-i-konfiguracija.md), [multi-agent workflow](docs/operations/multi-agent-workflow.md)
 

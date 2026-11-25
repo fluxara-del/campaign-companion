@@ -1,6 +1,6 @@
 # ADR-0004: Tipizirani ugovori naredbi i događaja (nacrt)
 
-Status: nacrt za Fazu 1 (dopunjeno 25. 11. 2026. prema supervisor nalazu SR-01: semantika batcha). Izvor: specifikacija §6–§8. Implementacija (zod sheme, Prisma model) dolazi u Fazi 1 nakon odobrenja; ovdje se fiksira oblik ugovora.
+Status: prihvaćeno i implementirano u Fazi 1 (domenski servis, ADR-0006); dopunjeno 25. 11. 2026. prema supervisor nalazu SR-01: semantika batcha). Izvor: specifikacija §6–§8. Implementacija: `src/domain/commands.ts`, `src/server/store/batch-service.ts`.
 
 ## Envelope batcha i naredbe
 
