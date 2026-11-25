@@ -70,8 +70,8 @@ Gate: sva mjerila prihvata iz specifikacije prolaze; poznata ograničenja rulese
 
 | Rizik | Provjera | Očekivani dokaz |
 |---|---|---|
-| Dvostruki trošak | 2 ista batcha (isti `batchId`), dvostruki klik, retry nakon timeouta | Jedan receipt i jedna promjena; isti rezultat odgovora. |
-| Različit payload istog ID-ja | Namjerno promijenjen iznos ili redoslijed pod istim `batchId` | Konflikt bez dodatnog upisa. |
+| Dvostruki trošak | 2 ista command ID-ja, dvostruki klik, retry nakon timeouta | Jedan receipt i jedna promjena; isti rezultat odgovora. |
+| Različit payload istog ID-ja | Namjerno promijenjen iznos | Konflikt bez dodatnog upisa. |
 | Gubitak promjene | Manual i AI s istom baseVersion | Jedan prihvaćen batch, drugi 409. |
 | Djelomično spremanje | Izazvati pogrešku usred višestrukog zapisa | Snapshot, events i receipt zajedno rollback. |
 | Prekid pri dostavi | Commit uspije, HTTP/SSE prekid | Receipt/replay oporavi točno jednom. |

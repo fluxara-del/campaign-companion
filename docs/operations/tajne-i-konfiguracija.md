@@ -29,7 +29,7 @@ Environment treba ograničiti na granu `main` i, ako plan dopušta, uključiti *
 | GHCR token (`read:packages`) | `docker login ghcr.io` korisnika `kdz-deploy` | Povlačenje privatne slike |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AI_PROVIDER`, `AI_MODEL` | `config/app.env` (chmod 600) | AI DM (Faza 5) |
 | `SESSION_SECRET`, `APP_ORIGIN` | `config/app.env` | Autentifikacija i CSRF/origin provjera (prije mobilnog pristupa) |
-| `TZ` | `config/app.env` | Prikaz vremena (otvorena odluka N3: `Europe/Warsaw` ili `Europe/Zagreb`) |
+| `TZ` | `config/app.env` | Prikaz vremena (`Europe/Zagreb`) |
 
 AI ključevi namjerno **nisu** u GitHub Secrets: CI ih ne treba, a ovako ne prolaze kroz runner.
 

@@ -15,7 +15,7 @@ AI review nije zamjena za testove. Nijedan PR se ne spaja automatski na temelju 
 
 ## Prioriteti reviewa
 
-1. **Gubitak ili kvarenje podataka:** SQLite transakcije (kratke, bez AI/HTTP poziva unutra), atomarnost batcha, idempotentnost batcha (`batchId` + kanonski hash, zabrana ponovne uporabe `commandId`; ADR-0004), optimistična konkurentnost (`expectedStateVersion` → 409), redoslijed `seq` događaja.
+1. **Gubitak ili kvarenje podataka:** SQLite transakcije (kratke, bez AI/HTTP poziva unutra), atomarnost batcha, idempotentnost (`commandId` + hash payloada), optimistična konkurentnost (`expectedStateVersion` → 409), redoslijed `seq` događaja.
 2. **Migracije:** samo aditivne bez markera; `RedefineTables`/`DROP`/`DELETE` traže `-- kdz:allow-destructive:` i plan; nikad izmjena već primijenjene migracije; shema = migracije; kompatibilnost s prethodnom verzijom (rollback).
 3. **Event log:** svaka potvrđena promjena ima događaj i receipt; ispravke su kompenzacijski događaji, nikad brisanje povijesti; replay od baseline-a daje isti snapshot.
 4. **AI-generated state updates:** AI izlaz je samo prijedlog validiran shemom (zod); server određuje actor i scope; nevaljan/nepotpun JSON se ne izvršava; AI ne odlučuje umjesto igrača, ne izmišlja bacanja, ne mijenja kanon bez eksplicitne odluke; prompt injection iz sadržaja ne širi ovlasti.

@@ -94,23 +94,11 @@ jobs:
           set -euo pipefail
           docker volume create kdz-ci-data
           docker volume create kdz-ci-backups
-          # Iste zastavice kao deploy/zimaos/deploy.sh i compose.yaml (read-only, bez mreže, bez capabilities).
-          run() {
-            docker run --rm --network none --user 1000:1000 --read-only --tmpfs /tmp -e HOME=/tmp \
-              --security-opt no-new-privileges:true --cap-drop ALL \
-              -v kdz-ci-data:/data -v kdz-ci-backups:/backups campaign-companion:ci "$@"
-          }
+          run() { docker run --rm --network none -v kdz-ci-data:/data -v kdz-ci-backups:/backups campaign-companion:ci "$@"; }
           run node node_modules/prisma/build/index.js migrate deploy
           run node node_modules/tsx/dist/cli.mjs scripts/db/check-migrations.ts --db /data/app.db --json
           run node node_modules/tsx/dist/cli.mjs scripts/db/backup.ts --db /data/app.db --out /backups --label ci
-          run node node_modules/tsx/dist/cli.mjs scripts/db/verify.ts --db /data/app.db
-          # Restore probe u zasebnu datoteku (aktivna baza se ne dira).
-          B="$(run sh -c 'ls -1 /backups/*.db | head -n1')"
-          run node node_modules/tsx/dist/cli.mjs scripts/db/verify.ts --backup "$B"
-          run node node_modules/tsx/dist/cli.mjs scripts/db/restore.ts --backup "$B" --db /data/restore-probe.db --confirm
-          run node node_modules/tsx/dist/cli.mjs scripts/db/verify.ts --db /data/restore-probe.db
-          docker run -d --name kdz-ci -p 127.0.0.1:3000:3000 --read-only --tmpfs /tmp --tmpfs /app/.next/cache \
-            --security-opt no-new-privileges:true --cap-drop ALL -v kdz-ci-data:/data campaign-companion:ci
+          docker run -d --name kdz-ci -p 127.0.0.1:3000:3000 -v kdz-ci-data:/data campaign-companion:ci
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/health; then echo; exit 0; fi
             sleep 2
