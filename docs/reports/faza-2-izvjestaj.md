@@ -67,3 +67,17 @@ Puni izvještaj (sadrži podatke kampanje, zato nije u repozitoriju) predan je v
 | Srednja: `SourceDocument` sprema sadržaj bez BOM-a, a hash izvornih bajtova | BOM se uklanja samo za parsiranje JSON-a; dokument se sprema doslovno. Ako sadržaj nije valjan UTF-8 (pa se ne može doslovno sačuvati kao tekst), uvoz se blokira (`document_not_utf8`). | „Doslovno čuvanje dokumenata (BOM)”: SHA-256 sadržaja pročitanog iz SQLitea jednak manifestu za Markdown s BOM-om, bez njega i za JSON s BOM-om |
 
 Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere komponenti padaju oba testa veza; tekstualnom provjerom izlaza padaju sva tri testa izlaza; uklanjanjem BOM-a iz sadržaja pada test BOM-a. Ukupno lokalno: 95 testova.
+
+## 6. Odgovor na preliminarni pregled `01323ba`: NTFS i TOCTOU
+
+**NTFS junction (dokaz, ne samo poziv `symlinkSync`).** Pomoćna funkcija testova nakon stvaranja veze na Windowsu pokreće `dir /AL` i test pada ako redak ne prikazuje `<JUNCTION>`; `lstat` mora prijaviti vezu. Lokalni testovi rade na NTFS-u (C: i E:, provjereno `Get-Volume`). Dodan je CI job **„Uvoz na Windowsu (NTFS junction)”** (`windows-2025`) koji izvršava sve testove uvoza na NTFS-u; Linux job iste testove izvršava sa simboličkim vezama.
+
+**TOCTOU (provjera putanje naspram čitanja).** Izvor se čita isključivo kroz `readVerified`: provjera svih komponenti → otvaranje datoteke (na POSIX-u `O_NOFOLLOW`) → `fstat` otvorenog opisnika → **ponovna** provjera svih komponenti → identitet (`dev` + `ino`) na putanji mora biti jednak otvorenoj datoteci → čitanje iz istog opisnika. Ako se išta promijeni, uvoz se blokira (`source_changed_before_read`) i ništa se ne kopira. Imena u direktoriju koriste se samo za popis; svaka datoteka prolazi vlastitu provjeru prije čitanja.
+
+| Test | Rezultat |
+|---|---|
+| Direktorij `npcs` zamijenjen junctionom (prema datoteci s tajnim sadržajem) **između provjere i otvaranja** | blokirano, tajni sadržaj nigdje u generaciji |
+| Ista zamjena **nakon otvaranja** | POSIX: blokirano ponovnom provjerom; Windows/NTFS: OS ne dopušta preimenovanje direktorija dok je datoteka otvorena (`EPERM`), pa uvoz čita izvornu datoteku |
+| Kontrolna provjera: bez ponovne provjere i usporedbe identiteta | test „između provjere i otvaranja” pada |
+
+**Preduvjet (dokumentiran).** Probni uvoz pokreće se dok se kampanja ne mijenja (npr. nije u tijeku spremanje iz ChatGPT Worka). Importer prvo izrađuje vlastitu kopiju (generacija u `import-sandbox/`, pod isključivom kontrolom importera, `flag: "wx"`), a mapiranje i probna baza čitaju isključivo tu kopiju; na kraju se izvor ponovno hashira prema manifestu (`source_changed_during_import`). Teoretski preostaje samo zamjena-pa-povratak unutar jednog čitanja, koju ni ponovna provjera identiteta ne može isključiti; ona ne može dovesti do čitanja `dm_private` jer i tada svaka komponenta mora proći provjeru. Ukupno lokalno: 97 testova.

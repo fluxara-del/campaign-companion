@@ -23,6 +23,8 @@ export type TrialImportOptions = {
   /** Putanja do Prisma CLI-ja (za `migrate deploy` probne baze). */
   prismaCli: string;
   projectRoot: string;
+  /** Samo za testove (simulacija istodobne promjene izvora). */
+  testHooks?: import("./source-snapshot").SnapshotHooks;
 };
 
 export type TrialImportResult = { report: ImportReport; generationDir: string; dbPath: string | null };
@@ -48,7 +50,7 @@ export function runTrialImport(o: TrialImportOptions): TrialImportResult {
   }
 
   const findings: Finding[] = [];
-  const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot);
+  const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot, o.testHooks);
   findings.push(...snapFindings);
   const manifestHash = canonicalHash(manifest);
 

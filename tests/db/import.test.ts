@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -236,7 +237,69 @@ function secretInTree(dir: string): boolean {
   });
 }
 
-const junction = (target: string, at: string) => symlinkSync(target, at, "junction");
+/**
+ * Stvara vezu na direktorij: na Windowsu NTFS junction (provjereno kroz `dir /AL` koji mora
+ * prikazati <JUNCTION>), drugdje simboličku vezu. Test ne prolazi ako veza nije stvarno nastala.
+ */
+function junction(target: string, at: string): void {
+  symlinkSync(target, at, "junction");
+  expect(lstatSync(at).isSymbolicLink()).toBe(true);
+  if (process.platform === "win32") {
+    const listing = execFileSync("cmd.exe", ["/d", "/c", "dir", "/AL", path.dirname(at)], { encoding: "utf8" });
+    const line = listing.split(/\r?\n/).find((l) => l.includes(path.basename(at)));
+    expect(line, "dir /AL mora prikazati NTFS junction").toMatch(/<JUNCTION>/);
+  }
+}
+
+function outsideNpcs(): string {
+  const outside = path.join(tmp, `outside-${randomUUID()}`);
+  mkdirSync(outside);
+  writeFileSync(path.join(outside, "npcs.json"), JSON.stringify({ npcs: [{ id: "NPC-X", name: SECRET }] }));
+  return outside;
+}
+
+describe("Zamjena stabla između provjere i čitanja (TOCTOU) se otkriva", () => {
+  it.each(["beforeOpen", "afterOpen"] as const)("direktorij zamijenjen junctionom u trenutku %s", (when) => {
+    const source = makeSource();
+    const outside = outsideNpcs();
+    let swapError: NodeJS.ErrnoException | null = null;
+    const swap = (rel: string) => {
+      if (rel !== "npcs/npcs.json") return;
+      try {
+        renameSync(path.join(source, "npcs"), path.join(source, "npcs-orig"));
+      } catch (e) {
+        swapError = e as NodeJS.ErrnoException;
+        return;
+      }
+      junction(outside, path.join(source, "npcs"));
+    };
+    const r = runTrialImport({
+      sourceRoot: source,
+      outRoot: path.join(tmp, "out"),
+      ownerActorId: "owner",
+      generation: randomUUID(),
+      now: "2026-11-25T12:00:00.000Z",
+      prismaCli,
+      projectRoot: root,
+      testHooks: { [when]: swap },
+    });
+    if (when === "afterOpen" && process.platform === "win32") {
+      // NTFS ne dopušta preimenovanje direktorija dok je datoteka u njemu otvorena:
+      // zamjena nakon otvaranja nije ni moguća, a uvoz čita izvornu datoteku.
+      expect(swapError).not.toBeNull();
+      expect((swapError as NodeJS.ErrnoException | null)?.code).toMatch(/EPERM|EBUSY|EACCES/);
+      expect(r.report.status).toBe("trial");
+      expect(secretInTree(r.generationDir)).toBe(false);
+      return;
+    }
+    expect(swapError).toBeNull();
+    expect(r.report.status).toBe("blocked");
+    expect(r.dbPath).toBeNull();
+    expect(r.report.findings.some((f) => f.code === "source_changed_before_read" && f.source === "npcs/npcs.json")).toBe(true);
+    expect(r.report.sourceManifest.files).toEqual([]);
+    expect(secretInTree(r.generationDir)).toBe(false);
+  }, 60_000);
+});
 
 describe("Veze (symlink/junction) u izvoru se odbijaju prije čitanja", () => {
   it("Markdown direktorij preusmjeren na dm_private", () => {
@@ -255,9 +318,7 @@ describe("Veze (symlink/junction) u izvoru se odbijaju prije čitanja", () => {
   }, 60_000);
 
   it("JSON direktorij preusmjeren izvan izvora", () => {
-    const outside = path.join(tmp, `outside-${randomUUID()}`);
-    mkdirSync(outside);
-    writeFileSync(path.join(outside, "npcs.json"), JSON.stringify({ npcs: [{ id: "NPC-X", name: SECRET }] }));
+    const outside = outsideNpcs();
     const source = makeSource((d) => {
       rmSync(path.join(d, "npcs"), { recursive: true });
       junction(outside, path.join(d, "npcs"));

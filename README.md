@@ -39,7 +39,7 @@ Aplikacija je na <http://localhost:3000>, health check na `/api/health`.
 | `npm run db:backup -- --out ./backups` | Konzistentna kopija + integritet + manifest |
 | `npm run db:verify -- --backup <datoteka>` | Provjera kopije (hash + integrity_check) |
 | `npm run db:restore -- --backup <datoteka> --confirm` | Restore (aplikacija zaustavljena; stara baza se premješta, ne briše) |
-| `npm run import:trial -- --source <kampanja>` | Probni uvoz u zasebnu bazu nad kopijom izvora (`import-sandbox/`, izvan Gita) |
+| `npm run import:trial -- --source <kampanja>` | Probni uvoz u zasebnu bazu nad kopijom izvora (`import-sandbox/`, izvan Gita); pokretati dok se kampanja ne mijenja |
 
 ## Način rada
 

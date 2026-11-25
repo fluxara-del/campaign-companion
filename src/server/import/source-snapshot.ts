@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { Finding, ManifestEntry, SourceManifest } from "./types";
 
@@ -54,6 +66,34 @@ export function resolveInsideSource(realRoot: string, rel: string): Resolved {
   if (norm(real) !== norm(cur) || !isWithin(real, realRoot)) return { ok: false, reason: "link" };
   return { ok: true, abs: cur };
 }
+
+/**
+ * Čitanje uz zaštitu od zamjene između provjere i čitanja (TOCTOU): datoteka se otvara
+ * (na POSIX-u s O_NOFOLLOW), zatim se putanja provjerava PONOVNO i identitet otvorene
+ * datoteke (dev + ino iz fstat) mora biti jednak onome na provjerenoj putanji. Čitaju se
+ * isključivo bajtovi iz već otvorenog opisnika.
+ */
+export function readVerified(realRoot: string, rel: string, hooks: SnapshotHooks = {}): Buffer | null {
+  const first = resolveInsideSource(realRoot, rel);
+  if (!first.ok) return null;
+  hooks.beforeOpen?.(rel);
+  const fd = openSync(first.abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = fstatSync(fd, { bigint: true });
+    if (!opened.isFile()) return null;
+    hooks.afterOpen?.(rel);
+    const again = resolveInsideSource(realRoot, rel);
+    if (!again.ok) return null;
+    const atPath = lstatSync(again.abs, { bigint: true });
+    if (atPath.dev !== opened.dev || atPath.ino !== opened.ino) return null;
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Samo za testove: ubacivanje promjene stabla između provjere putanje i otvaranja datoteke. */
+export type SnapshotHooks = { beforeOpen?: (rel: string) => void; afterOpen?: (rel: string) => void };
 
 type Listed = { files: { rel: string; abs: string }[]; excluded: string[]; findings: Finding[]; realRoot: string };
 
@@ -140,16 +180,36 @@ export function assertOutputOutsideSource(outPath: string, sourceRoot: string): 
  * Kopira dopuštene izvore u `targetDir` i vraća manifest SHA-256. Bajtovi se čitaju jednom
  * (iz provjerene putanje), hash se računa nad njima, a kopija se ponovno hashira.
  */
-export function snapshotSources(sourceRoot: string, targetDir: string): { manifest: SourceManifest; findings: Finding[] } {
-  const { files, excluded, findings } = listAllowedSources(sourceRoot);
+export function snapshotSources(
+  sourceRoot: string,
+  targetDir: string,
+  hooks: SnapshotHooks = {},
+): { manifest: SourceManifest; findings: Finding[] } {
+  const { files, excluded, findings, realRoot } = listAllowedSources(sourceRoot);
   const entries: ManifestEntry[] = [];
   if (findings.some((f) => f.severity === "error")) {
     // Ništa se ne kopira ako ijedna putanja nije prošla provjeru.
     return { manifest: { formatVersion: 1, files: [], excluded }, findings };
   }
-  for (const { rel, abs } of files) {
+  const read: { rel: string; bytes: Buffer }[] = [];
+  for (const { rel } of files) {
+    const bytes = readVerified(realRoot, rel, hooks);
+    if (!bytes) {
+      findings.push({
+        code: "source_changed_before_read",
+        severity: "error",
+        message: "Putanja ili datoteka promijenila se između provjere i čitanja; odbijeno.",
+        source: rel,
+      });
+      continue;
+    }
+    read.push({ rel, bytes });
+  }
+  if (findings.some((f) => f.severity === "error")) {
+    return { manifest: { formatVersion: 1, files: [], excluded }, findings };
+  }
+  for (const { rel, bytes } of read) {
     const dst = path.join(targetDir, ...rel.split("/"));
-    const bytes = readFileSync(abs);
     mkdirSync(path.dirname(dst), { recursive: true });
     writeFileSync(dst, bytes, { flag: "wx" });
     const srcHash = sha256(bytes);
