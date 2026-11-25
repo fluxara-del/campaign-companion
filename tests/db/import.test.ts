@@ -466,3 +466,88 @@ describe("Količina predmeta", () => {
     expect(r.report.findings.some((f) => f.code === "item_quantity")).toBe(true);
   }, 60_000);
 });
+
+describe("Količina: isti skup ulaza za opremu i predmete izvan inventara", () => {
+  const OMIT = Symbol("izostavljeno");
+  const cases: { label: string; value: unknown; expected: number | null | "blocked" }[] = [
+    { label: "izostavljena", value: OMIT, expected: null },
+    { label: "null", value: null, expected: null },
+    { label: "0", value: 0, expected: 0 },
+    { label: "3", value: 3, expected: 3 },
+    { label: "tekst", value: "dva", expected: "blocked" },
+    { label: "negativna", value: -1, expected: "blocked" },
+    { label: "decimalna", value: 1.5, expected: "blocked" },
+  ];
+  const kinds = [
+    { kind: "equipment", sourceRef: "state/character.json#equipment[0]" },
+    { kind: "externalItems", sourceRef: "state/character.json#externalItems[0]" },
+  ] as const;
+
+  for (const { kind, sourceRef } of kinds) {
+    it.each(cases)(`${kind}: količina $label`, ({ value, expected }) => {
+      const r = run(
+        makeSource((d) => {
+          const f = path.join(d, "state", "character.json");
+          const c = JSON.parse(readFileSync(f, "utf8"));
+          if (value === OMIT) delete c[kind][0].quantity;
+          else c[kind][0].quantity = value;
+          writeFileSync(f, JSON.stringify(c));
+        }),
+      );
+      if (expected === "blocked") {
+        expect(r.report.status).toBe("blocked");
+        expect(r.dbPath).toBeNull();
+        expect(r.report.findings.some((f) => f.code === "item_quantity" && f.source === sourceRef)).toBe(true);
+        return;
+      }
+      expect(r.report.status).toBe("trial");
+      const db = openDatabase(r.dbPath!, { readonly: true });
+      const row = db.prepare(`SELECT quantity FROM "ItemInstance" WHERE sourceRef = ?`).get(sourceRef) as { quantity: number | null };
+      db.close();
+      expect(row.quantity).toBe(expected);
+    }, 60_000);
+  }
+});
+
+describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
+  const setSlot = (slot: unknown) => (d: string) => {
+    const f = path.join(d, "state", "character.json");
+    const c = JSON.parse(readFileSync(f, "utf8"));
+    c.resources.spellSlots["1"] = slot;
+    writeFileSync(f, JSON.stringify(c));
+  };
+
+  it.each([
+    ["current nepoznat", { current: null, max: 2 }, { current: null, max: 2 }],
+    ["max nepoznat", { current: 0, max: null }, { current: 0, max: null }],
+    ["max izostavljen", { current: 1 }, { current: 1, max: null }],
+  ])("%s → resurs postoji s očuvanim null", (_l, slot, expected) => {
+    const r = run(makeSource(setSlot(slot)));
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!);
+    const pool = db.prepare(`SELECT id, current, max FROM "ResourcePool" WHERE resourceKey = 'spell-slot-1'`).get() as { id: string; current: number | null; max: number | null };
+    expect({ current: pool.current, max: pool.max }).toEqual(expected);
+    if (expected.current === null) {
+      let code = "";
+      try {
+        executeBatch(db, { actorId: "owner" }, {
+          schemaVersion: 1,
+          batchId: randomUUID(),
+          campaignId: "UZR-001",
+          expectedStateVersion: 0,
+          commands: [{ commandId: randomUUID(), type: "ConsumeResource", intentRef: { kind: "player_choice", messageId: "m" }, payload: { resourcePoolId: pool.id, amount: 1 } }],
+        });
+      } catch (e) {
+        code = (e as { code?: string }).code ?? "";
+      }
+      expect(code).toBe("needs_ruling");
+    }
+    db.close();
+  }, 60_000);
+
+  it("neispravna vrijednost slota blokira uvoz (ne postaje tiho null)", () => {
+    const r = run(makeSource(setSlot({ current: "nula", max: 2 })));
+    expect(r.report.status).toBe("blocked");
+    expect(r.report.findings.some((f) => f.code === "resource_value" && f.source === "state/character.json#resources.spellSlots.1.current")).toBe(true);
+  }, 60_000);
+});

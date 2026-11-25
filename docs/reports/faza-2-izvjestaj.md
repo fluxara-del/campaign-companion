@@ -99,3 +99,11 @@ Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere
 **Usput otkriveno testom:** decimalni broj bilo gdje u izvornim podacima (npr. `massLb: 3.5`) rušio je uvoz jer je kanonski hash dopuštao samo cijele brojeve. Kanonski JSON sada ima način `numbers: "any"` (konačni brojevi zapisani kao u RFC 8785) koji koristi samo uvoz; domena i dalje dopušta isključivo cijele brojeve. Hash sadržaja stvarne kampanje nije se promijenio (`d58c7541…`).
 
 **Dokaz:** testovi „izričito null se čuva”, „tekst/negativna/decimalna količina blokira”, „decimalni brojevi u izvornim podacima ne ruše uvoz” i unit test za način `any`. Ukupno lokalno: 106 testova.
+
+## 9. Pregled `58b2bf9`: spell slotovi s nepoznatim vrijednostima (Codex P2) i matrica količina (supervisor)
+
+**Codex P2:** spell slot s `null` vrijednošću (npr. `{ "current": null, "max": 2 }`) bio je preskočen, a upozorenje je netočno tvrdilo da je sačuvan u profilu (profil ne sadrži `resources`). Sada se slot uvozi kao resurs s očuvanim `null` (domena tada vraća `needs_ruling` umjesto „ne postoji”), izostavljen `max` = nepoznato, a neispravna vrijednost (`"nula"`, negativna, decimalna) blokira uvoz kodom `resource_value` — isto pravilo vrijedi i za ostale resurse, koji su prije neispravnu vrijednost tiho pretvarali u `null`. Poruke za nemapirane oblike sada točno navode da izvor ostaje doslovno u `SourceDocument`.
+
+**Supervisor (pokriće):** isti skup od 7 ulaza za količinu (izostavljena, `null`, 0, 3, tekst, negativna, decimalna) provjerava se za opremu **i** za predmete izvan inventara; prihvaćene vrijednosti čitaju se natrag iz SQLitea, a odbijene blokiraju uvoz s `item_quantity` na točnom izvoru.
+
+Hash sadržaja stvarne kampanje nepromijenjen (`d58c7541…`). Ukupno lokalno: 124 testa.

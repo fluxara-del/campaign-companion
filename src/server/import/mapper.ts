@@ -80,18 +80,35 @@ export function buildImportPlan(
   }
 
   // --- Resursi.
+  // Izostavljeno ili `null` = nepoznato; inače mora biti cijeli broj ≥ 0 (neispravno blokira, ne postaje tiho null).
+  const nullableCount = (v: unknown, src: string): number | null => {
+    if (v === undefined || v === null) return null;
+    const n = int(v);
+    if (n === null || n < 0) {
+      findings.push({ code: "resource_value", severity: "error", message: "Vrijednost resursa nije cijeli broj ≥ 0.", source: src });
+      return null;
+    }
+    return n;
+  };
+  const PRESERVED = "izvorna vrijednost ostaje doslovno sačuvana u SourceDocument (state/character.json)";
   const pools: ResourcePoolState[] = [];
   const resources = isObj(character.resources) ? character.resources : {};
   for (const [key, value] of Object.entries(resources)) {
     const src = `state/character.json#resources.${key}`;
     if (key === "spellSlots" && isObj(value)) {
       for (const [level, slot] of Object.entries(value)) {
-        if (!isObj(slot) || int(slot.current) === null || int(slot.max) === null) {
-          findings.push({ code: "resource_shape", severity: "warning", message: "Neočekivan oblik spell slota; sačuvan samo u profilu.", source: `${src}.${level}` });
+        const slotSrc = `${src}.${level}`;
+        if (!/^[1-9]$/.test(level) || !isObj(slot) || !("current" in slot)) {
+          findings.push({ code: "resource_shape", severity: "warning", message: `Neočekivan oblik spell slota; nije mapiran, ${PRESERVED}.`, source: slotSrc });
           continue;
         }
+        const current = nullableCount(slot.current, `${slotSrc}.current`);
+        const max = nullableCount(slot.max, `${slotSrc}.max`);
+        if (current === null || max === null) {
+          findings.push({ code: "unknown_preserved", severity: "info", message: `Spell slot razine ${level}: nepoznata vrijednost ostaje nepoznata.`, source: slotSrc });
+        }
         const id = `${pcId}:spell-slot-${level}`;
-        pools.push({ id, characterId: pcId, resourceKey: `spell-slot-${level}`, current: int(slot.current), max: int(slot.max), rechargePolicy: null });
+        pools.push({ id, characterId: pcId, resourceKey: `spell-slot-${level}`, current, max, rechargePolicy: null });
         mapping[`${src}.${level}`] = id;
       }
       continue;
@@ -105,11 +122,11 @@ export function buildImportPlan(
       continue;
     }
     if (!isObj(value) || !("current" in value)) {
-      findings.push({ code: "resource_shape", severity: "warning", message: `Resurs ${key} nema oblik {current, max}; sačuvan samo u profilu.`, source: src });
+      findings.push({ code: "resource_shape", severity: "warning", message: `Resurs ${key} nema oblik {current, max}; nije mapiran, ${PRESERVED}.`, source: src });
       continue;
     }
-    const current = value.current === null ? null : int(value.current);
-    const max = value.max === null || value.max === undefined ? null : int(value.max);
+    const current = nullableCount(value.current, `${src}.current`);
+    const max = nullableCount(value.max, `${src}.max`);
     const recharge = str(value.recharge);
     if (recharge && !RECHARGE.has(recharge)) {
       findings.push({ code: "recharge_unknown", severity: "warning", message: `Nepoznata politika obnove „${recharge}”; postavljeno nepoznato.`, source: src });
