@@ -29,13 +29,13 @@ Datum: 25. 11. 2026. Pripremio: Claude Code (Lead Developer). Issue #13. Status:
 
 ## 2. Probni uvoz stvarne kampanje (lokalno, izvan Gita)
 
-Izvršeno 25. 11. 2026. u `import-sandbox/2026-11-25T15-09-49-422Z/` (u `.gitignore`).
+Izvršeno 25. 11. 2026. u `import-sandbox/2026-11-25T15-52-50-152Z/` (u `.gitignore`), nakon ispravaka iz §5.
 
 | Provjera | Rezultat |
 |---|---|
 | Status | probna baza izrađena i provjerena; 0 pogrešaka, 0 upozorenja, 16 info nalaza |
 | Replay od baseline-a / povratno čitanje / `integrity_check` | prolazi / jednako planu / ok |
-| Determinizam | dvije probe: isti hash sadržaja `ea9d59ff…` i isti baseline `29bc0474…` |
+| Determinizam | ponovljene probe daju isti hash sadržaja i isti baseline (`29bc0474…`); hash sadržaja nakon ispravka BOM-a je `d58c7541…` |
 | Izvor netaknut | SHA-256 svih 42 datoteka izvan `dm_private/` jednak prije i poslije |
 | `dm_private/` | nije čitan, kopiran ni uvezen (samo ime u popisu isključenih) |
 
@@ -57,3 +57,13 @@ Puni izvještaj (sadrži podatke kampanje, zato nije u repozitoriju) predan je v
 4. Obnova resursa koju izvor ne navodi ostaje nepoznata (ne izvodi se iz pravila klase) do Faze 3.
 5. Akter vlasnika u probnoj bazi je `owner` (stvarna autentifikacija čeka O5).
 6. Prihvaćanje uvoza i prelazak na bazu je zasebna, izričita odluka nakon Faze 7 (plan): do tada se proba može ponavljati nad svježom kopijom.
+
+## 5. Odgovor na supervisor pregled (BLOCK na `9a24897`) i Codex nalaze
+
+| Nalaz | Rješenje | Dokaz (test) |
+|---|---|---|
+| Visoka: importer slijedi vezu na nadređenom direktoriju (privatni DM sadržaj može ući u kopiju) | `resolveInsideSource` provjerava **svaku** komponentu putanje od stvarnog korijena izvora (`lstat`: symlink/junction odbijen) i potvrđuje da je `realpath` točno očekivana putanja unutar izvora. Direktorij se ne popisuje i datoteka se ne čita dok provjera ne prođe; ako ijedna putanja padne, ništa se ne kopira i uvoz je blokiran (`source_link_rejected`). Bajtovi se čitaju jednom, iz provjerene putanje. | „Markdown direktorij preusmjeren na dm_private” i „JSON direktorij preusmjeren izvan izvora” (Windows junction): blokirano, manifest prazan, tajni sadržaj nigdje u generaciji, izvor nepromijenjen |
+| Visoka: provjera izlaza uspoređuje tekst prije `mkdirSync` | `assertOutputOutsideSource` prije prvog upisa razrješava stvarnu lokaciju izvora i **najbližeg postojećeg roditelja** izlaza (`realpath`) i odbija izlaz unutar izvora (i obrnuto); nakon stvaranja direktorija provjera se ponavlja. Kopija se piše s `flag: "wx"`. | „Izlaz preko veze” za `link`, `link/sandbox`, `link/a/b`: odbijeno; popis direktorija, datoteka i njihovih hashova jednak prije i poslije |
+| Srednja: `SourceDocument` sprema sadržaj bez BOM-a, a hash izvornih bajtova | BOM se uklanja samo za parsiranje JSON-a; dokument se sprema doslovno. Ako sadržaj nije valjan UTF-8 (pa se ne može doslovno sačuvati kao tekst), uvoz se blokira (`document_not_utf8`). | „Doslovno čuvanje dokumenata (BOM)”: SHA-256 sadržaja pročitanog iz SQLitea jednak manifestu za Markdown s BOM-om, bez njega i za JSON s BOM-om |
+
+Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere komponenti padaju oba testa veza; tekstualnom provjerom izlaza padaju sva tri testa izlaza; uklanjanjem BOM-a iz sadržaja pada test BOM-a. Ukupno lokalno: 95 testova.

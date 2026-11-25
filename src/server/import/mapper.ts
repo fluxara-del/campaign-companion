@@ -339,8 +339,15 @@ export function buildImportPlan(
       path: f.path,
       kind: f.path.startsWith("sessions/") ? ("session" as const) : f.path.startsWith("handoff/") ? ("handoff" as const) : f.path.startsWith("world/") ? ("world" as const) : ("other" as const),
       sha256: f.sha256,
-      content: readText(copyRoot, f.path),
+      // Doslovni sadržaj (BOM se NE uklanja), kako bi SHA-256 sadržaja iz baze odgovarao manifestu.
+      content: readFileSync(path.join(copyRoot, ...f.path.split("/")), "utf8"),
     }));
+
+  for (const d of documents) {
+    if (sha256(Buffer.from(d.content, "utf8")) !== d.sha256) {
+      findings.push({ code: "document_not_utf8", severity: "error", message: "Dokument nije valjan UTF-8; doslovno čuvanje nije moguće.", source: d.path });
+    }
+  }
 
   const plan: ImportPlan = {
     setup: {

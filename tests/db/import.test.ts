@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -32,13 +32,18 @@ function makeSource(mutate?: (dir: string) => void): string {
   return dir;
 }
 
+/** Popis direktorija, datoteka i veza s hashovima sadržaja (veze se ne slijede). */
 function hashTree(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
   const walk = (d: string) => {
     for (const n of readdirSync(d).sort()) {
       const p = path.join(d, n);
-      if (statSync(p).isDirectory()) walk(p);
-      else out[path.relative(dir, p)] = sha256(readFileSync(p));
+      const st = lstatSync(p);
+      if (st.isSymbolicLink()) out[path.relative(dir, p)] = "link";
+      else if (st.isDirectory()) {
+        out[path.relative(dir, p) + "/"] = "dir";
+        walk(p);
+      } else out[path.relative(dir, p)] = sha256(readFileSync(p));
     }
   };
   walk(dir);
@@ -220,4 +225,83 @@ describe("Blokirajući nalazi: probna baza se ne izrađuje", () => {
     ).toThrow(/unutar izvornog/);
     expect(existsSync(path.join(source, "sandbox"))).toBe(false);
   });
+});
+
+/** Je li tajni sadržaj igdje u generaciji (kopija, baza, izvještaj)? */
+function secretInTree(dir: string): boolean {
+  if (!existsSync(dir)) return false;
+  return Object.keys(hashTree(dir)).some((rel) => {
+    const p = path.join(dir, rel);
+    return !rel.endsWith("/") && lstatSync(p).isFile() && readFileSync(p).includes(Buffer.from(SECRET));
+  });
+}
+
+const junction = (target: string, at: string) => symlinkSync(target, at, "junction");
+
+describe("Veze (symlink/junction) u izvoru se odbijaju prije čitanja", () => {
+  it("Markdown direktorij preusmjeren na dm_private", () => {
+    const source = makeSource((d) => {
+      rmSync(path.join(d, "sessions"), { recursive: true });
+      junction(path.join(d, "dm_private"), path.join(d, "sessions"));
+    });
+    const before = hashTree(source);
+    const r = run(source);
+    expect(r.report.status).toBe("blocked");
+    expect(r.dbPath).toBeNull();
+    expect(r.report.findings.some((f) => f.code === "source_link_rejected" && f.source === "sessions")).toBe(true);
+    expect(r.report.sourceManifest.files).toEqual([]);
+    expect(secretInTree(r.generationDir)).toBe(false);
+    expect(hashTree(source)).toEqual(before);
+  }, 60_000);
+
+  it("JSON direktorij preusmjeren izvan izvora", () => {
+    const outside = path.join(tmp, `outside-${randomUUID()}`);
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, "npcs.json"), JSON.stringify({ npcs: [{ id: "NPC-X", name: SECRET }] }));
+    const source = makeSource((d) => {
+      rmSync(path.join(d, "npcs"), { recursive: true });
+      junction(outside, path.join(d, "npcs"));
+    });
+    const r = run(source);
+    expect(r.report.status).toBe("blocked");
+    expect(r.report.findings.some((f) => f.code === "source_link_rejected" && f.source === "npcs/npcs.json")).toBe(true);
+    expect(secretInTree(r.generationDir)).toBe(false);
+  }, 60_000);
+});
+
+describe("Izlaz preko veze ne smije pisati u izvor", () => {
+  it.each(["link", "link/sandbox", "link/a/b"])("outRoot = %s", (sub) => {
+    const source = makeSource();
+    const link = path.join(tmp, `link-${randomUUID()}`);
+    junction(source, link);
+    const before = hashTree(source);
+    const outRoot = path.join(link, ...sub.split("/").slice(1));
+    expect(() =>
+      runTrialImport({ sourceRoot: source, outRoot, ownerActorId: "o", generation: "g", now: "2026-11-25T00:00:00Z", prismaCli, projectRoot: root }),
+    ).toThrow(/unutar izvornog/);
+    expect(hashTree(source)).toEqual(before);
+  });
+});
+
+describe("Doslovno čuvanje dokumenata (BOM)", () => {
+  it("SHA-256 sadržaja iz baze odgovara manifestu za dokument s BOM-om i bez njega", () => {
+    const source = makeSource((d) => {
+      writeFileSync(path.join(d, "sessions", "S-BOM.md"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("# S BOM-om\n\nčćž\n")]));
+      writeFileSync(path.join(d, "sessions", "S-BEZ.md"), "# Bez BOM-a\n\nčćž\n");
+      const npcs = path.join(d, "npcs", "npcs.json");
+      writeFileSync(npcs, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(npcs)]));
+    });
+    const r = run(source);
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const docs = db.prepare(`SELECT path, sha256, content FROM "SourceDocument"`).all() as { path: string; sha256: string; content: string }[];
+    db.close();
+    const manifest = new Map(r.report.sourceManifest.files.map((f) => [f.path, f.sha256]));
+    for (const p of ["sessions/S-BOM.md", "sessions/S-BEZ.md", "npcs/npcs.json"]) {
+      const d = docs.find((x) => x.path === p)!;
+      expect(sha256(Buffer.from(d.content, "utf8"))).toBe(manifest.get(p));
+      expect(d.sha256).toBe(manifest.get(p));
+    }
+    expect(docs.find((x) => x.path === "sessions/S-BOM.md")!.content.charCodeAt(0)).toBe(0xfeff);
+  }, 60_000);
 });

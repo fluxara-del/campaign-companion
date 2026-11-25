@@ -9,7 +9,7 @@ import { checkIntegrity } from "@/server/db/sqlite-safety";
 import { runConsistencyChecks } from "./checks";
 import { buildImportPlan } from "./mapper";
 import { renderReportMarkdown, type ImportReport } from "./report";
-import { snapshotSources, verifySourcesUnchanged } from "./source-snapshot";
+import { assertOutputOutsideSource, isWithin, realPath, snapshotSources, verifySourcesUnchanged } from "./source-snapshot";
 import { IMPORTER_VERSION, type Finding, type ImportPlan } from "./types";
 import { writeImport } from "./writer";
 
@@ -39,12 +39,13 @@ export function planContentHash(plan: ImportPlan): string {
 export function runTrialImport(o: TrialImportOptions): TrialImportResult {
   const generationDir = path.resolve(o.outRoot, o.generation);
   if (existsSync(generationDir)) throw new Error(`Generacija već postoji: ${generationDir}`);
-  const sourceResolved = path.resolve(o.sourceRoot);
-  if (generationDir.toLowerCase().startsWith(sourceResolved.toLowerCase() + path.sep)) {
-    throw new Error("Sandbox ne smije biti unutar izvornog direktorija kampanje.");
-  }
+  // Prije prvog upisa: stvarna lokacija izvora i najbližeg postojećeg roditelja izlaza.
+  assertOutputOutsideSource(generationDir, o.sourceRoot);
   const copyRoot = path.join(generationDir, "source");
   mkdirSync(copyRoot, { recursive: true });
+  if (isWithin(realPath(generationDir), realPath(o.sourceRoot))) {
+    throw new Error("Sandbox je nakon stvaranja razriješen unutar izvora; prekinuto.");
+  }
 
   const findings: Finding[] = [];
   const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot);
