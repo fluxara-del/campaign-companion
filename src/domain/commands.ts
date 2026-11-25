@@ -79,6 +79,115 @@ export const AppendJournalNote = z.strictObject({
   }),
 });
 
+// --- Faza 3: character sheet ---
+
+const AbilityKey = z.enum(["STR", "DEX", "CON", "INT", "WIS", "CHA"]);
+const Reason = z.string().min(1).max(300);
+
+/** Trajna promjena lika (ne potrošnja u igri): zahtijeva razlog. */
+export const SetAbilityScore = z.strictObject({
+  ...commandBase,
+  type: z.literal("SetAbilityScore"),
+  payload: z.strictObject({ characterId: EntityId, ability: AbilityKey, value: z.int().min(1).max(30), reason: Reason }),
+});
+
+export const STAT_TARGETS = /^(proficiencyBonus|initiative|ac|speed|spellSaveDc|spellAttack|passive:Perception|mod:(STR|DEX|CON|INT|WIS|CHA)|save:(STR|DEX|CON|INT|WIS|CHA)|skill:[A-Za-z ]{3,30})$/;
+
+/** Override izvedene vrijednosti s razlogom; `value: null` uklanja override. */
+export const SetStatOverride = z.strictObject({
+  ...commandBase,
+  type: z.literal("SetStatOverride"),
+  payload: z.strictObject({
+    characterId: EntityId,
+    target: z.string().regex(STAT_TARGETS, "Nepodržana izvedena vrijednost"),
+    value: z.int().min(-50).max(100).nullable(),
+    reason: Reason,
+  }),
+});
+
+export const SetSpellDetails = z.strictObject({
+  ...commandBase,
+  type: z.literal("SetSpellDetails"),
+  payload: z.strictObject({ spellSelectionId: EntityId, spellLevel: z.int().min(0).max(9).nullable(), concentration: z.boolean().nullable() }),
+});
+
+export const SetSpellPrepared = z.strictObject({
+  ...commandBase,
+  type: z.literal("SetSpellPrepared"),
+  payload: z.strictObject({ spellSelectionId: EntityId, prepared: z.boolean() }),
+});
+
+export const ResolveCast = z.strictObject({
+  ...commandBase,
+  type: z.literal("ResolveCast"),
+  payload: z.strictObject({
+    spellSelectionId: EntityId,
+    /** Igrač izričito bira način troška; slot i besplatna uporaba nikad se ne terete oba. */
+    cost: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("slot"), resourcePoolId: EntityId }),
+      z.strictObject({ kind: z.literal("free_use"), resourcePoolId: EntityId }),
+      z.strictObject({ kind: z.literal("none") }),
+    ]),
+  }),
+});
+
+export const EndConcentration = z.strictObject({
+  ...commandBase,
+  type: z.literal("EndConcentration"),
+  payload: z.strictObject({ characterId: EntityId, reason: Reason }),
+});
+
+/** Rezultat igračeva bacanja za otvoreni zahtjev (npr. concentration save). */
+export const ResolveRollRequest = z.strictObject({
+  ...commandBase,
+  type: z.literal("ResolveRollRequest"),
+  payload: z.strictObject({ rollRequestId: EntityId, total: z.int().min(-20).max(60) }),
+});
+
+export const ApplyCondition = z.strictObject({
+  ...commandBase,
+  type: z.literal("ApplyCondition"),
+  payload: z.strictObject({
+    characterId: EntityId,
+    name: z.string().min(1).max(60),
+    source: z.string().min(1).max(200),
+    durationNote: z.string().min(1).max(200).nullable(),
+  }),
+});
+
+export const RemoveCondition = z.strictObject({
+  ...commandBase,
+  type: z.literal("RemoveCondition"),
+  payload: z.strictObject({ conditionId: EntityId, reason: Reason }),
+});
+
+export const TransferItem = z.strictObject({
+  ...commandBase,
+  type: z.literal("TransferItem"),
+  payload: z.strictObject({
+    itemId: EntityId,
+    /** Točno jedno odredište: držatelj (lik/NPC), spremnik ili lokacija. */
+    to: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("holder"), holderRef: EntityId }),
+      z.strictObject({ kind: z.literal("container"), containerItemId: EntityId }),
+      z.strictObject({ kind: z.literal("location"), location: z.string().min(1).max(200) }),
+    ]),
+  }),
+});
+
+export const SetEquipped = z.strictObject({
+  ...commandBase,
+  type: z.literal("SetEquipped"),
+  payload: z.strictObject({ itemId: EntityId, equipped: z.boolean() }),
+});
+
+/** Potvrda odmora: `previewHash` mora odgovarati pregledu koji je igrač vidio. */
+export const CompleteRest = z.strictObject({
+  ...commandBase,
+  type: z.literal("CompleteRest"),
+  payload: z.strictObject({ characterId: EntityId, kind: z.enum(["short", "long"]), previewHash: z.string().regex(/^[a-f0-9]{64}$/) }),
+});
+
 export const BatchCommand = z.discriminatedUnion("type", [
   ApplyDamage,
   ApplyHealing,
@@ -86,6 +195,18 @@ export const BatchCommand = z.discriminatedUnion("type", [
   ConsumeResource,
   SpendCurrency,
   AppendJournalNote,
+  SetAbilityScore,
+  SetStatOverride,
+  SetSpellDetails,
+  SetSpellPrepared,
+  ResolveCast,
+  EndConcentration,
+  ResolveRollRequest,
+  ApplyCondition,
+  RemoveCondition,
+  TransferItem,
+  SetEquipped,
+  CompleteRest,
 ]);
 export type BatchCommand = z.infer<typeof BatchCommand>;
 export type CommandType = BatchCommand["type"];

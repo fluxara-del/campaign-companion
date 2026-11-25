@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { canonicalHash, canonicalJson } from "@/domain/canonical";
 import type { DomainEventBody } from "@/domain/events";
 import { applyEvent, ReplayDivergenceError } from "@/domain/reducer";
-import type { CampaignState } from "@/domain/state";
+import { SNAPSHOT_FORMAT, type CampaignState } from "@/domain/state";
 import type { Db } from "./connection";
 import { loadState } from "./state-repo";
 
@@ -73,6 +73,10 @@ function verifyReplayInSnapshot(db: Db, campaignId: string, opts: { afterEventsR
   if (!baseline) throw new Error(`Kampanja ${campaignId} nema baseline.`);
 
   const state = JSON.parse(baseline.snapshotJson) as CampaignState;
+  if (state.format !== SNAPSHOT_FORMAT) {
+    // Baseline stvoren prije Faze 3 ne sadrži nove dijelove stanja; ne nadograđuje se nagađanjem.
+    problems.push(`Baseline je formata ${state.format ?? 1}, očekivan ${SNAPSHOT_FORMAT}; kampanju treba ponovno stvoriti ili uvesti.`);
+  }
   if (snapshotHash(state) !== baseline.snapshotHash) problems.push("Hash baseline snapshot-a ne odgovara zapisu.");
 
   const events = db

@@ -8,7 +8,7 @@ import { applyEvent } from "@/domain/reducer";
 import { decide } from "@/domain/rules";
 import { cloneState } from "@/domain/state";
 import { isBusyError, isUniqueViolation, type Db } from "./connection";
-import { loadState, persistChanges } from "./state-repo";
+import { loadKnownHolderRefs, loadState, persistChanges } from "./state-repo";
 
 export type Actor = { actorId: string };
 
@@ -108,10 +108,11 @@ function runInTransaction(
 
   // 5) Pravila redom naredbi; svaka naredba vidi stanje nakon prethodnih.
   const before = loadState(db, campaignId);
+  const knownHolderRefs = loadKnownHolderRefs(db, campaignId);
   const working = cloneState(before);
   const drafts: { commandId: string; draft: EventDraft }[] = [];
   batch.commands.forEach((command, commandIndex) => {
-    for (const draft of decide(working, command, { commandIndex, newId: opts.newId })) {
+    for (const draft of decide(working, command, { commandIndex, newId: opts.newId, knownHolderRefs })) {
       applyEvent(working, draft);
       drafts.push({ commandId: command.commandId, draft });
     }

@@ -61,7 +61,22 @@ export function syntheticSetup(id = C1): CampaignSetup {
       { actorId: PLAYER.actorId, role: "player" },
       { actorId: PLAYER2.actorId, role: "player" },
     ],
-    characters: [{ id: `${id}-PC-001`, name: "Probni lik", hpCurrent: 20, hpMax: 24, hpTemp: 0 }],
+    characters: [
+      {
+        id: `${id}-PC-001`,
+        name: "Probni lik",
+        hpCurrent: 20,
+        hpMax: 24,
+        hpTemp: 0,
+        level: 2,
+        speedFt: 30,
+        acBase: 18,
+        spellcastingAbility: "CHA",
+        abilities: { STR: 16, DEX: 10, CON: 14, INT: 8, WIS: 12, CHA: 14 },
+        saveProficiencies: ["CHA", "WIS"],
+        skillProficiencies: { Athletics: "proficient", Perception: "proficient" },
+      },
+    ],
     resourcePools: [
       { id: `${id}-slot-1`, characterId: `${id}-PC-001`, resourceKey: "spell-slot-1", current: 2, max: 2, rechargePolicy: "long_rest" },
       { id: `${id}-smite`, characterId: `${id}-PC-001`, resourceKey: "free-divine-smite", current: 0, max: 1, rechargePolicy: "long_rest" },

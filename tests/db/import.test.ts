@@ -555,3 +555,30 @@ describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
     expect(r.report.findings.some((f) => f.code === "resource_value" && f.source === "state/character.json#resources.spellSlots.1.current")).toBe(true);
   }, 60_000);
 });
+
+describe("Faza 3: uvoz trajnih podataka lika", () => {
+  it("atributi, proficiency iz zabilježenih zbrojeva, inicijativa kao bonus, čarolije i značajke", () => {
+    const r = run(makeSource());
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const pc = db.prepare(`SELECT level, acBase, speedFt, spellcastingAbility, abStr, abCha, saveProficienciesJson, skillProficienciesJson FROM "Character" WHERE id = 'PC-001'`).get() as Record<string, unknown>;
+    expect(pc).toMatchObject({ level: 2, acBase: 18, speedFt: 30, spellcastingAbility: "CHA", abStr: 16, abCha: 14 });
+    expect(JSON.parse(pc.saveProficienciesJson as string)).toEqual(["CHA", "WIS"]);
+    // Insight 9 ne odgovara izračunu (WIS +1, PB 2) → override s razlogom, ne izmišljena proficiency.
+    expect(JSON.parse(pc.skillProficienciesJson as string)).toEqual({ Athletics: "proficient", Perception: "proficient", Persuasion: "proficient" });
+    const mods = db.prepare(`SELECT target, kind, value FROM "StatModifier" ORDER BY target`).all();
+    expect(mods).toEqual([
+      { target: "initiative", kind: "bonus", value: 2 },
+      { target: "skill:Insight", kind: "override", value: 9 },
+    ]);
+    const spells = db.prepare(`SELECT name, prepared, alwaysPrepared, spellLevel, concentration FROM "SpellSelection" ORDER BY name`).all();
+    expect(spells).toEqual([
+      { name: "Bless", prepared: 1, alwaysPrepared: 0, spellLevel: null, concentration: null },
+      { name: "Divine Smite", prepared: 1, alwaysPrepared: 1, spellLevel: null, concentration: null },
+    ]);
+    expect((db.prepare(`SELECT COUNT(*) AS n FROM "FeatureInstance"`).get() as { n: number }).n).toBe(2);
+    db.close();
+    expect(r.report.findings.some((f) => f.code === "imported_override" && f.source?.includes("Insight"))).toBe(true);
+    expect(r.report.findings.some((f) => f.code === "spellcasting_inferred")).toBe(true);
+  }, 60_000);
+});

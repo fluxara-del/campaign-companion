@@ -60,18 +60,41 @@ model Member {
 }
 
 model Character {
-  id         String @id
-  campaignId String
-  name       String
-  hpCurrent  Int
+  id                     String  @id
+  campaignId             String
+  name                   String
+  hpCurrent              Int
   /// null = nepoznato
-  hpMax      Int?
-  hpTemp     Int    @default(0)
+  hpMax                  Int?
+  hpTemp                 Int     @default(0)
+  // --- Faza 3: trajni podaci lika (null = nepoznato) ---
+  level                  Int?
+  speedFt                Int?
+  /// Zabilježena osnovna klasa oklopa (izračun iz opreme dolazi s katalogom predmeta)
+  acBase                 Int?
+  /// STR | DEX | CON | INT | WIS | CHA
+  spellcastingAbility    String?
+  abStr                  Int?
+  abDex                  Int?
+  abCon                  Int?
+  abInt                  Int?
+  abWis                  Int?
+  abCha                  Int?
+  /// JSON niz kratica atributa s proficiency u saving throwu
+  saveProficienciesJson  String  @default("[]")
+  /// JSON objekt vještina: "proficient" | "expertise"
+  skillProficienciesJson String  @default("{}")
 
-  campaign Campaign          @relation(fields: [campaignId], references: [id], onDelete: Restrict)
-  pools    ResourcePool[]
-  wallets  Wallet[]
-  profile  CharacterProfile?
+  campaign      Campaign          @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  pools         ResourcePool[]
+  wallets       Wallet[]
+  profile       CharacterProfile?
+  modifiers     StatModifier[]
+  spells        SpellSelection[]
+  features      FeatureInstance[]
+  conditions    ActiveCondition[]
+  concentration Concentration?
+  rollRequests  RollRequest[]
 
   @@unique([campaignId, id])
 }
@@ -342,4 +365,107 @@ model SourceDocument {
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
 
   @@id([campaignId, path])
+}
+
+// ---------------------------------------------------------------------------
+// Faza 3: model lika za character sheet. Svi zapisi su vezani na kampanju i lika
+// složenim ključevima; mijenjaju se isključivo kroz domenski servis.
+// ---------------------------------------------------------------------------
+
+/// Bonus ili override izvedene vrijednosti, s izvorom i razlogom.
+model StatModifier {
+  id          String @id
+  campaignId  String
+  characterId String
+  /// npr. initiative, ac, speed, save:WIS, skill:Perception, passive:Perception, spellSaveDc, spellAttack
+  target      String
+  /// bonus | override
+  kind        String
+  value       Int
+  source      String
+  reason      String
+
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
+}
+
+model SpellSelection {
+  id             String   @id
+  campaignId     String
+  characterId    String
+  name           String
+  /// 0 = cantrip; null = nepoznato
+  spellLevel     Int?
+  known          Boolean  @default(true)
+  prepared       Boolean  @default(false)
+  alwaysPrepared Boolean  @default(false)
+  /// null = nepoznato
+  concentration  Boolean?
+  sourceRef      String?
+
+  character      Character       @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+  concentrations Concentration[]
+
+  @@unique([campaignId, id])
+}
+
+model FeatureInstance {
+  id             String  @id
+  campaignId     String
+  characterId    String
+  name           String
+  /// passive | active | null (nepoznato)
+  kind           String?
+  resourcePoolId String?
+  note           String?
+  sourceRef      String?
+
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
+}
+
+model ActiveCondition {
+  id           String  @id
+  campaignId   String
+  characterId  String
+  name         String
+  source       String
+  durationNote String?
+
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
+}
+
+/// Trenutačna koncentracija lika (najviše jedna).
+model Concentration {
+  campaignId       String
+  characterId      String
+  spellSelectionId String
+
+  character Character      @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+  spell     SpellSelection @relation(fields: [campaignId, spellSelectionId], references: [campaignId, id], onDelete: Restrict)
+
+  @@id([campaignId, characterId])
+}
+
+/// Zahtjev za bacanje (npr. concentration save) koji čeka igračev rezultat.
+model RollRequest {
+  id          String  @id
+  campaignId  String
+  characterId String
+  /// concentration_save
+  kind        String
+  dc          Int
+  reason      String
+  /// pending | resolved
+  status      String
+  total       Int?
+  outcome     String?
+
+  character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
+
+  @@unique([campaignId, id])
 }
