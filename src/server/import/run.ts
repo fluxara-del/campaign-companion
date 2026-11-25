@@ -24,7 +24,7 @@ export type TrialImportOptions = {
   prismaCli: string;
   projectRoot: string;
   /** Samo za testove (simulacija istodobne promjene izvora). */
-  testHooks?: import("./source-snapshot").SnapshotHooks;
+  testHooks?: { snapshot?: import("./source-snapshot").SnapshotHooks; final?: import("./source-snapshot").SnapshotHooks };
 };
 
 export type TrialImportResult = { report: ImportReport; generationDir: string; dbPath: string | null };
@@ -50,7 +50,7 @@ export function runTrialImport(o: TrialImportOptions): TrialImportResult {
   }
 
   const findings: Finding[] = [];
-  const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot, o.testHooks);
+  const { manifest, findings: snapFindings } = snapshotSources(o.sourceRoot, copyRoot, o.testHooks?.snapshot);
   findings.push(...snapFindings);
   const manifestHash = canonicalHash(manifest);
 
@@ -131,7 +131,7 @@ export function runTrialImport(o: TrialImportOptions): TrialImportResult {
     if (!v.replayOk || !v.roundTripOk || !v.integrityOk) report.status = "blocked";
   }
 
-  findings.push(...verifySourcesUnchanged(o.sourceRoot, manifest));
+  findings.push(...verifySourcesUnchanged(o.sourceRoot, manifest, o.testHooks?.final));
   if (findings.some((f) => f.code === "source_changed_during_import")) report.status = "blocked";
 
   writeFileSync(path.join(generationDir, "report.json"), JSON.stringify(report, null, 2) + "\n");

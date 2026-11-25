@@ -281,7 +281,7 @@ describe("Zamjena stabla između provjere i čitanja (TOCTOU) se otkriva", () =>
       now: "2026-11-25T12:00:00.000Z",
       prismaCli,
       projectRoot: root,
-      testHooks: { [when]: swap },
+      testHooks: { snapshot: { [when]: swap } },
     });
     if (when === "afterOpen" && process.platform === "win32") {
       // NTFS ne dopušta preimenovanje direktorija dok je datoteka u njemu otvorena:
@@ -364,5 +364,61 @@ describe("Doslovno čuvanje dokumenata (BOM)", () => {
       expect(d.sha256).toBe(manifest.get(p));
     }
     expect(docs.find((x) => x.path === "sessions/S-BOM.md")!.content.charCodeAt(0)).toBe(0xfeff);
+  }, 60_000);
+});
+
+describe("Završna provjera izvora koristi zaštićeno čitanje", () => {
+  it.each(["beforeOpen", "afterOpen"] as const)("zamjena putanje tijekom završnog hashiranja (%s) se ne čita i blokira", (when) => {
+    const source = makeSource();
+    // Zamjenska datoteka ima IDENTIČNE bajtove kao original: kad bi je provjera pročitala,
+    // hash bi se poklopio i promjena se ne bi prijavila. Prijava dokazuje da nije pročitana.
+    const outside = path.join(tmp, `outside-same-${randomUUID()}`);
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, "npcs.json"), readFileSync(path.join(source, "npcs", "npcs.json")));
+    let swapError: NodeJS.ErrnoException | null = null;
+    const swap = (rel: string) => {
+      if (rel !== "npcs/npcs.json") return;
+      try {
+        renameSync(path.join(source, "npcs"), path.join(source, "npcs-orig"));
+      } catch (e) {
+        swapError = e as NodeJS.ErrnoException;
+        return;
+      }
+      junction(outside, path.join(source, "npcs"));
+    };
+    const r = runTrialImport({
+      sourceRoot: source,
+      outRoot: path.join(tmp, "out"),
+      ownerActorId: "owner",
+      generation: randomUUID(),
+      now: "2026-11-25T12:00:00.000Z",
+      prismaCli,
+      projectRoot: root,
+      testHooks: { final: { [when]: swap } },
+    });
+    if (when === "afterOpen" && process.platform === "win32") {
+      expect((swapError as NodeJS.ErrnoException | null)?.code).toMatch(/EPERM|EBUSY|EACCES/);
+      expect(r.report.status).toBe("trial");
+      return;
+    }
+    expect(swapError).toBeNull();
+    expect(r.report.status).toBe("blocked");
+    expect(r.report.findings.some((f) => f.code === "source_changed_during_import" && f.source === "npcs/npcs.json")).toBe(true);
+  }, 60_000);
+
+  it("nestanak izvorne datoteke tijekom završne provjere blokira uvoz", () => {
+    const source = makeSource();
+    const r = runTrialImport({
+      sourceRoot: source,
+      outRoot: path.join(tmp, "out"),
+      ownerActorId: "owner",
+      generation: randomUUID(),
+      now: "2026-11-25T12:00:00.000Z",
+      prismaCli,
+      projectRoot: root,
+      testHooks: { final: { beforeOpen: (rel) => rel === "quests/quests.json" && rmSync(path.join(source, "quests", "quests.json")) } },
+    });
+    expect(r.report.status).toBe("blocked");
+    expect(r.report.findings.some((f) => f.code === "source_changed_during_import" && f.source === "quests/quests.json")).toBe(true);
   }, 60_000);
 });

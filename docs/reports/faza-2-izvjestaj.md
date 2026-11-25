@@ -81,3 +81,11 @@ Kontrolne provjere osjetljivosti (lokalno, zatim vraćeno): uklanjanjem provjere
 | Kontrolna provjera: bez ponovne provjere i usporedbe identiteta | test „između provjere i otvaranja” pada |
 
 **Preduvjet (dokumentiran).** Probni uvoz pokreće se dok se kampanja ne mijenja (npr. nije u tijeku spremanje iz ChatGPT Worka). Importer prvo izrađuje vlastitu kopiju (generacija u `import-sandbox/`, pod isključivom kontrolom importera, `flag: "wx"`), a mapiranje i probna baza čitaju isključivo tu kopiju; na kraju se izvor ponovno hashira prema manifestu (`source_changed_during_import`). Teoretski preostaje samo zamjena-pa-povratak unutar jednog čitanja, koju ni ponovna provjera identiteta ne može isključiti; ona ne može dovesti do čitanja `dm_private` jer i tada svaka komponenta mora proći provjeru. Ukupno lokalno: 97 testova.
+
+## 7. Odgovor na pregled `b6d0a81` (BLOCK): završno hashiranje izvora
+
+**Nalaz:** `verifySourcesUnchanged` je provjerio putanju pa je ponovno otvorio pozivom `readFileSync(putanja)`; promjena roditeljskog direktorija između te dvije operacije mogla je dovesti do čitanja sadržaja izvan izvora.
+
+**Rješenje:** završna provjera koristi isti `readVerified` kao izrada kopije (provjera komponenti → otvaranje → `fstat` → ponovna provjera → isti `dev`/`ino` → čitanje iz opisnika). Nestanak datoteke, veza, promjena identiteta, neuspjelo otvaranje ili nedostupan korijen izvora daju `source_changed_during_import` i status `blocked`.
+
+**Dokaz:** test „zamjena putanje tijekom završnog hashiranja” mijenja `npcs/` u junction prema datoteci s **identičnim bajtovima** kao original: kad bi provjera pročitala zamjensku datoteku, hash bi se poklopio i promjena se ne bi prijavila; prijava `source_changed_during_import` dokazuje da sadržaj nije pročitan. Varijanta nakon otvaranja: POSIX otkriva, NTFS odbija preimenovanje (`EPERM`). Dodatni test: nestanak datoteke tijekom provjere blokira uvoz. Kontrolna provjera: bez ponovne provjere i usporedbe identiteta padaju test izrade kopije i test završne provjere. Ukupno lokalno: 100 testova.

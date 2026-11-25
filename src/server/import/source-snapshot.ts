@@ -221,20 +221,36 @@ export function snapshotSources(
   return { manifest: { formatVersion: 1, files: entries, excluded }, findings };
 }
 
-/** Ponovno hashira izvore iz manifesta (dokaz da izvor nije mijenjan tijekom uvoza). */
-export function verifySourcesUnchanged(sourceRoot: string, manifest: SourceManifest): Finding[] {
+/**
+ * Ponovno hashira izvore iz manifesta (dokaz da izvor nije mijenjan tijekom uvoza).
+ * Koristi isto zaštićeno čitanje kao izrada kopije: nestanak datoteke, veza, promjena
+ * identiteta ili neuspjelo otvaranje daju `source_changed_during_import` bez čitanja
+ * zamjenskog sadržaja.
+ */
+export function verifySourcesUnchanged(sourceRoot: string, manifest: SourceManifest, hooks: SnapshotHooks = {}): Finding[] {
   const findings: Finding[] = [];
-  const realRoot = realPath(sourceRoot);
+  const changed = (source: string) =>
+    findings.push({
+      code: "source_changed_during_import",
+      severity: "error",
+      message: "Izvorna datoteka promijenila se tijekom uvoza (ili se ne može sigurno pročitati); rezultat nije pouzdan.",
+      source,
+    });
+  let realRoot: string;
+  try {
+    realRoot = realPath(sourceRoot);
+  } catch {
+    changed(".");
+    return findings;
+  }
   for (const e of manifest.files) {
-    const r = resolveInsideSource(realRoot, e.path);
-    if (!r.ok || sha256(readFileSync(r.abs)) !== e.sha256) {
-      findings.push({
-        code: "source_changed_during_import",
-        severity: "error",
-        message: "Izvorna datoteka promijenila se tijekom uvoza; rezultat nije pouzdan.",
-        source: e.path,
-      });
+    let bytes: Buffer | null = null;
+    try {
+      bytes = readVerified(realRoot, e.path, hooks);
+    } catch {
+      bytes = null;
     }
+    if (!bytes || sha256(bytes) !== e.sha256) changed(e.path);
   }
   return findings;
 }
