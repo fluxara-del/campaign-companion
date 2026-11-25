@@ -123,6 +123,7 @@ model BatchReceipt {
   campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   commands CommandIndex[]
   events   DomainEvent[]
+  journal  JournalEntry[]
 
   @@id([campaignId, batchId])
   @@unique([campaignId, stateVersionAfter])
@@ -164,6 +165,7 @@ model DomainEvent {
   journal  JournalEventLink[]
 
   @@unique([campaignId, seq])
+  @@unique([campaignId, id])
   @@index([campaignId, batchId])
 }
 
@@ -181,17 +183,21 @@ model JournalEntry {
   createdAt  String
 
   campaign Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  receipt  BatchReceipt?      @relation(fields: [campaignId, batchId], references: [campaignId, batchId], onDelete: Restrict)
   events   JournalEventLink[]
 
+  @@unique([campaignId, id])
   @@index([campaignId, createdAt])
 }
 
+/// Veza dnevnika i događaja; oba moraju pripadati istoj kampanji (složeni strani ključevi).
 model JournalEventLink {
+  campaignId     String
   journalEntryId String
   eventId        String
 
-  entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
-  event DomainEvent  @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  entry JournalEntry @relation(fields: [campaignId, journalEntryId], references: [campaignId, id], onDelete: Restrict)
+  event DomainEvent  @relation(fields: [campaignId, eventId], references: [campaignId, id], onDelete: Restrict)
 
   @@id([journalEntryId, eventId])
 }

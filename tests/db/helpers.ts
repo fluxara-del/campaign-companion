@@ -43,6 +43,8 @@ export const OWNER = { actorId: "owner-1" };
 export const AI = { actorId: "ai-1" };
 export const VIEWER = { actorId: "viewer-1" };
 export const STRANGER = { actorId: "stranger-1" };
+export const PLAYER = { actorId: "player-1" };
+export const PLAYER2 = { actorId: "player-2" };
 
 export const C1 = "KDZ-T1";
 export const C2 = "KDZ-T2";
@@ -56,6 +58,8 @@ export function syntheticSetup(id = C1): CampaignSetup {
       { actorId: OWNER.actorId, role: "owner" },
       { actorId: AI.actorId, role: "ai_service" },
       { actorId: VIEWER.actorId, role: "viewer" },
+      { actorId: PLAYER.actorId, role: "player" },
+      { actorId: PLAYER2.actorId, role: "player" },
     ],
     characters: [{ id: `${id}-PC-001`, name: "Probni lik", hpCurrent: 20, hpMax: 24, hpTemp: 0 }],
     resourcePools: [

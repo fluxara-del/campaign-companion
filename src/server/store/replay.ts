@@ -51,8 +51,19 @@ export type ReplayReport = {
  * Replay od posljednjeg baseline-a: kanonski snapshot nakon primjene svih kasnijih događaja
  * mora imati isti hash kao živo stanje, sekvenca mora biti bez praznina, a broj potvrđenih
  * batcheva mora objasniti trenutačnu verziju.
+ *
+ * Sva čitanja izvršavaju se u jednoj read transakciji (jedna WAL snimka), pa valjan commit
+ * drugog pisca tijekom provjere ne može izazvati lažno odstupanje.
  */
-export function verifyReplay(db: Db, campaignId: string): ReplayReport {
+export function verifyReplay(
+  db: Db,
+  campaignId: string,
+  opts: { /** Samo za testove: poziva se između čitanja. */ afterEventsRead?: () => void } = {},
+): ReplayReport {
+  return db.transaction(() => verifyReplayInSnapshot(db, campaignId, opts)).deferred();
+}
+
+function verifyReplayInSnapshot(db: Db, campaignId: string, opts: { afterEventsRead?: () => void }): ReplayReport {
   const problems: string[] = [];
   const baseline = db
     .prepare(
@@ -67,6 +78,8 @@ export function verifyReplay(db: Db, campaignId: string): ReplayReport {
   const events = db
     .prepare(`SELECT seq, type, payloadJson FROM "DomainEvent" WHERE campaignId = ? AND seq > ? ORDER BY seq`)
     .all(campaignId, baseline.seq) as { seq: number; type: DomainEventBody["type"]; payloadJson: string }[];
+
+  opts.afterEventsRead?.();
 
   let expectedSeq = baseline.seq + 1;
   for (const e of events) {

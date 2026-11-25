@@ -85,6 +85,8 @@ Unique ograničenja na `BatchReceipt` i `CommandIndex` su posljednja zaštita: a
 | SQLite zauzet dulje od limita | `503 busy` bez upisa; klijent smije ponoviti **isti** batch (isti `batchId`) |
 | Prekid procesa nakon commita, prije odgovora | Klijent šalje isti batch ili `GET …/batches/:batchId` → spremljeni receipt |
 
+**Pristup potvrdi:** potvrdu batcha (GET i ponavljanje) vidi samo akter koji je batch poslao ili vlasnik kampanje. Ostalim članovima GET vraća `404` kao za nepostojeći batch, a ponavljanje `409 batch_id_reused` bez sadržaja.
+
 Odgovori: `200` receipt (`replayed` true/false); `409` `stale_version` | `batch_id_reused` | `command_id_reused`; `422` neispravno/nepodržano (`needs_ruling`, indeks člana); `403` bez ovlasti; `503` zauzeta baza.
 
 HTTP (usklađeno sa specifikacijom §7): `POST /api/campaigns/:id/batches` za slanje i ponavljanje, `GET /api/campaigns/:id/batches/:batchId` za oporavak ishoda (spremljeni receipt ili `404` ako batch nije potvrđen; `404` nije dokaz konačnog neuspjeha dok je isti zahtjev možda u obradi, pa klijent tada ponavlja **isti** batch). Ruta po `commandId` ne postoji.

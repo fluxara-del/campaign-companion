@@ -15,6 +15,8 @@ import {
   createTemplate,
   freshDb,
   OWNER,
+  PLAYER,
+  PLAYER2,
   pool,
   seed,
   STRANGER,
@@ -287,6 +289,59 @@ describe("Pristup kampanji", () => {
   it("receipt druge kampanje nije dostupan akteru koji tamo nije član", () => {
     const r = executeBatch(db, OWNER, batch([cmd("ApplyHealing", { characterId: PC, amount: 1 })]));
     expectDomainError(() => getBatchReceipt(db, STRANGER, C1, r.batchId), "forbidden");
+  });
+});
+
+describe("Pristup potvrdi batcha (autor ili vlasnik)", () => {
+  function dmNoteBatch() {
+    return batch([
+      cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null }),
+      cmd("AppendJournalNote", { title: "Tajna", text: "Samo za DM-a.", visibility: "dm" }),
+    ]);
+  }
+
+  it("autor nakon timeouta dohvaća potvrdu i smije ponoviti batch; vlasnik vidi potvrdu", () => {
+    const b = dmNoteBatch();
+    expect(() =>
+      executeBatch(db, PLAYER, b, {
+        afterCommit: () => {
+          throw new Error("timeout");
+        },
+      }),
+    ).toThrow("timeout");
+    const mine = getBatchReceipt(db, PLAYER, C1, b.batchId);
+    expect(mine.journalEntryIds).toHaveLength(2);
+    expect(executeBatch(db, PLAYER, b).replayed).toBe(true);
+    expect(getBatchReceipt(db, OWNER, C1, b.batchId).events).toEqual(mine.events);
+  });
+
+  it.each([
+    ["drugi igrač", PLAYER2],
+    ["viewer", VIEWER],
+    ["ai_service", AI],
+  ])("%s ne dobiva metapodatke tuđeg batcha ni kroz GET ni kroz ponavljanje", (_l, other) => {
+    const b = dmNoteBatch();
+    const r = executeBatch(db, PLAYER, b);
+    const dmNoteId = r.journalEntryIds[1]!;
+
+    const getErr = expectDomainError(() => getBatchReceipt(db, other, C1, b.batchId), "not_found");
+    const missing = expectDomainError(() => getBatchReceipt(db, other, C1, randomUUID()), "not_found");
+    expect(getErr.message).toBe(missing.message);
+    expect(JSON.stringify(getErr.details)).not.toContain(dmNoteId);
+
+    // Ponavljanje istog batcha od drugog aktera ne otkriva sadržaj (ai/viewer padaju već na ovlastima).
+    const err = (() => {
+      try {
+        executeBatch(db, other, b);
+      } catch (e) {
+        return e as DomainError;
+      }
+      throw new Error("očekivana pogreška");
+    })();
+    expect(["batch_id_reused", "forbidden"]).toContain(err.code);
+    expect(JSON.stringify(err.details)).not.toContain(dmNoteId);
+    expect(JSON.stringify(err.details)).not.toContain(r.events[0]!.id);
+    expect(count(db, "BatchReceipt")).toBe(1);
   });
 });
 

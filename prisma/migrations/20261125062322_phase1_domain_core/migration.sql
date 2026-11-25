@@ -142,6 +142,7 @@ CREATE TABLE "JournalEntry" (
     "revision" INTEGER NOT NULL DEFAULT 1,
     "createdAt" TEXT NOT NULL,
     CONSTRAINT "JournalEntry_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES "Campaign" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "JournalEntry_campaignId_batchId_fkey" FOREIGN KEY ("campaignId", "batchId") REFERENCES "BatchReceipt" ("campaignId", "batchId") ON DELETE RESTRICT ON UPDATE CASCADE,
     CHECK ("kind" IN ('manual','projection','summary')),
     CHECK ("visibility" IN ('player','dm','shared')),
     CHECK ("revision" >= 1)
@@ -149,12 +150,13 @@ CREATE TABLE "JournalEntry" (
 
 -- CreateTable
 CREATE TABLE "JournalEventLink" (
+    "campaignId" TEXT NOT NULL,
     "journalEntryId" TEXT NOT NULL,
     "eventId" TEXT NOT NULL,
 
     PRIMARY KEY ("journalEntryId", "eventId"),
-    CONSTRAINT "JournalEventLink_journalEntryId_fkey" FOREIGN KEY ("journalEntryId") REFERENCES "JournalEntry" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-    CONSTRAINT "JournalEventLink_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "DomainEvent" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "JournalEventLink_campaignId_journalEntryId_fkey" FOREIGN KEY ("campaignId", "journalEntryId") REFERENCES "JournalEntry" ("campaignId", "id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "JournalEventLink_campaignId_eventId_fkey" FOREIGN KEY ("campaignId", "eventId") REFERENCES "DomainEvent" ("campaignId", "id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -199,7 +201,13 @@ CREATE INDEX "DomainEvent_campaignId_batchId_idx" ON "DomainEvent"("campaignId",
 CREATE UNIQUE INDEX "DomainEvent_campaignId_seq_key" ON "DomainEvent"("campaignId", "seq");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "DomainEvent_campaignId_id_key" ON "DomainEvent"("campaignId", "id");
+
+-- CreateIndex
 CREATE INDEX "JournalEntry_campaignId_createdAt_idx" ON "JournalEntry"("campaignId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "JournalEntry_campaignId_id_key" ON "JournalEntry"("campaignId", "id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CampaignBaseline_campaignId_seq_key" ON "CampaignBaseline"("campaignId", "seq");
@@ -275,4 +283,9 @@ CREATE TRIGGER "Campaign_version_monotonic" BEFORE UPDATE OF "stateVersion", "la
 WHEN NEW."stateVersion" < OLD."stateVersion" OR NEW."lastEventSeq" < OLD."lastEventSeq"
 BEGIN
     SELECT RAISE(ABORT, 'stateVersion/lastEventSeq ne smiju padati');
+END;
+
+CREATE TRIGGER "JournalEntry_immutable_identity" BEFORE UPDATE OF "id", "campaignId", "batchId" ON "JournalEntry"
+BEGIN
+    SELECT RAISE(ABORT, 'JournalEntry id/campaignId/batchId su nepromjenjivi');
 END;

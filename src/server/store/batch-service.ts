@@ -36,7 +36,7 @@ export type ExecuteOptions = {
 };
 
 type CampaignRow = { id: string; stateVersion: number; lastEventSeq: number };
-type ReceiptRow = { requestHash: string; responseJson: string };
+type ReceiptRow = { requestHash: string; responseJson: string; actorId: string };
 
 function requireMember(db: Db, campaignId: string, actor: Actor): MemberRole {
   const member = db
@@ -47,8 +47,18 @@ function requireMember(db: Db, campaignId: string, actor: Actor): MemberRole {
   return member.role;
 }
 
-function replayOrConflict(row: ReceiptRow, requestHash: string, batchId: string): BatchResult {
-  if (row.requestHash !== requestHash) {
+/**
+ * Pravilo pristupa potvrdi batcha (isto za `GET …/batches/:batchId` i za ponavljanje batcha):
+ * potvrdu smije vidjeti samo akter koji je batch poslao ili vlasnik kampanje. Ostali članovi
+ * (player, ai_service, viewer) ne dobivaju ni metapodatke (ID-jeve događaja, ID-jeve bilješki).
+ */
+function canReadReceipt(role: MemberRole, actor: Actor, row: ReceiptRow): boolean {
+  return row.actorId === actor.actorId || role === "owner";
+}
+
+function replayOrConflict(row: ReceiptRow, requestHash: string, batchId: string, role: MemberRole, actor: Actor): BatchResult {
+  // Tuđi batch: ID je zauzet, ali se ne otkriva ništa o njegovu sadržaju ni ishodu.
+  if (!canReadReceipt(role, actor, row) || row.requestHash !== requestHash) {
     throw new DomainError("batch_id_reused", "Isti batchId već je potvrđen s drugačijim sadržajem.", { batchId });
   }
   return { ...(JSON.parse(row.responseJson) as BatchResponse), replayed: true };
@@ -69,9 +79,9 @@ function runInTransaction(
 
   // 2) Idempotentnost: isti batch → spremljeni odgovor bez upisa, neovisno o trenutačnoj verziji.
   const receipt = db
-    .prepare(`SELECT requestHash, responseJson FROM "BatchReceipt" WHERE campaignId = ? AND batchId = ?`)
+    .prepare(`SELECT requestHash, responseJson, actorId FROM "BatchReceipt" WHERE campaignId = ? AND batchId = ?`)
     .get(campaignId, batchId) as ReceiptRow | undefined;
-  if (receipt) return replayOrConflict(receipt, requestHash, batchId);
+  if (receipt) return replayOrConflict(receipt, requestHash, batchId, role, actor);
 
   // 3) Zabrana ponovne uporabe naredbe iz drugog batcha.
   const findCommand = db.prepare(`SELECT batchId FROM "CommandIndex" WHERE campaignId = ? AND commandId = ?`);
@@ -185,7 +195,7 @@ function runInTransaction(
     `INSERT INTO "JournalEntry" (id, campaignId, batchId, kind, title, text, visibility, revision, createdAt)
      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
   );
-  const insLink = db.prepare(`INSERT INTO "JournalEventLink" (journalEntryId, eventId) VALUES (?, ?)`);
+  const insLink = db.prepare(`INSERT INTO "JournalEventLink" (campaignId, journalEntryId, eventId) VALUES (?, ?, ?)`);
   if (projectionId) {
     insJournal.run(
       projectionId,
@@ -197,7 +207,7 @@ function runInTransaction(
       "player",
       committedAt,
     );
-    for (const e of mechanical) insLink.run(projectionId, e.id);
+    for (const e of mechanical) insLink.run(campaignId, projectionId, e.id);
   }
   for (const e of events) {
     if (e.draft.type !== "JournalNoteAppended") continue;
@@ -211,7 +221,7 @@ function runInTransaction(
       e.draft.visibility,
       committedAt,
     );
-    insLink.run(e.draft.payload.journalEntryId, e.id);
+    insLink.run(campaignId, e.draft.payload.journalEntryId, e.id);
   }
 
   const upd = db
@@ -253,10 +263,11 @@ export function executeBatch(db: Db, actor: Actor, input: unknown, options: Exec
 
 /** Oporavak ishoda nakon timeouta: `GET …/batches/:batchId`. */
 export function getBatchReceipt(db: Db, actor: Actor, campaignId: string, batchId: string): BatchResult {
-  requireMember(db, campaignId, actor);
+  const role = requireMember(db, campaignId, actor);
   const row = db
-    .prepare(`SELECT requestHash, responseJson FROM "BatchReceipt" WHERE campaignId = ? AND batchId = ?`)
+    .prepare(`SELECT requestHash, responseJson, actorId FROM "BatchReceipt" WHERE campaignId = ? AND batchId = ?`)
     .get(campaignId, batchId) as ReceiptRow | undefined;
-  if (!row) throw new DomainError("not_found", "Batch nije potvrđen.", { batchId });
+  // Nepostojeći i tuđi batch daju isti odgovor.
+  if (!row || !canReadReceipt(role, actor, row)) throw new DomainError("not_found", "Batch nije potvrđen.", { batchId });
   return { ...(JSON.parse(row.responseJson) as BatchResponse), replayed: true };
 }

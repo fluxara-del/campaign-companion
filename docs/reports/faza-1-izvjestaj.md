@@ -6,7 +6,7 @@ Datum: 25. 11. 2026. Pripremio: Claude Code (Lead Developer). Issue #10. Status:
 
 | Dio | Datoteke |
 |---|---|
-| Shema i migracija (11 tablica, složeni strani ključevi, CHECK, append-only triggeri) | `prisma/schema.prisma`, `prisma/migrations/20261125001723_phase1_domain_core/` |
+| Shema i migracija (11 tablica, složeni strani ključevi (uključujući veze dnevnika), CHECK, append-only triggeri) | `prisma/schema.prisma`, `prisma/migrations/20261125062322_phase1_domain_core/` |
 | Ugovor batcha (zod), kanonski JSON + SHA-256 | `src/domain/commands.ts`, `src/domain/canonical.ts` |
 | Pravila 6 sintetičkih naredbi, događaji s vrijednostima prije/poslije, reducer | `src/domain/rules.ts`, `events.ts`, `reducer.ts`, `journal.ts` |
 | Pristup kampanji i ovlasti po ulozi | `src/domain/authz.ts` |
@@ -62,3 +62,13 @@ Ukupno lokalno: 59 testova u 6 datoteka (unit + db), typecheck, lint (0 upozoren
 - Ručni SQL nad bazom zaobilazi pravila; ublaženo triggerima za povijest i replay provjerom za stanje, ali ne može se potpuno spriječiti na razini datoteke.
 - CHECK i triggeri su ručno dodani u migraciju; buduće Prisma `RedefineTables` migracije te tablice moraju ih ponovno stvoriti (kontrolna točka za review migracija).
 - Otvorene odluke O1–O5 i N3 i dalje stoje; Faza 2 (uvoz) treba barem potvrdu o načinu obrade `dm_private/` (O3).
+
+## 6. Odgovor na preliminarni supervisor pregled (25. 11. 2026., head `7da51a8`)
+
+| Nalaz | Rješenje | Dokaz |
+|---|---|---|
+| Visoka: `JournalEventLink` dopušta vezu zapisa i događaja iz različitih kampanja | `JournalEventLink` dobiva `campaignId` i složene strane ključeve `(campaignId, journalEntryId)` → `JournalEntry(campaignId, id)` i `(campaignId, eventId)` → `DomainEvent(campaignId, id)`. Dodatno: `JournalEntry.batchId` ima složeni FK na `BatchReceipt`, a `id/campaignId/batchId` zapisa dnevnika su nepromjenjivi (trigger). Migracija Faze 1 (nespojena) je ponovno generirana kao `20261125062322_phase1_domain_core`. | `integrity-replay`: „veza dnevnika i događaja mora ostati unutar jedne kampanje” (A↔B odbijeno u oba smjera, A↔A prihvaćeno) |
+| Važno: `getBatchReceipt` vraća metapodatke tuđeg batcha svakom članu | Pravilo: potvrdu batcha vidi samo **autor** batcha ili **vlasnik** kampanje; isto vrijedi za ponavljanje batcha. Ostali članovi dobivaju `not_found` (GET; isto kao nepostojeći batch) odnosno `batch_id_reused`/`forbidden` (ponavljanje), bez ID-jeva događaja i bilješki. | `batch-service`: „Pristup potvrdi batcha” (autor nakon timeouta, vlasnik, drugi igrač, viewer, ai_service) |
+| Važno: `verifyReplay` čita u više odvojenih upita | Cijela provjera teče u jednoj read transakciji (jedna WAL snimka). | `integrity-replay`: „valjan commit drugog pisca tijekom provjere ne izaziva lažno odstupanje”; postojeći test „otkriva promjenu stanja izvan domenskog servisa” i dalje prolazi |
+
+**Kontrolne provjere osjetljivosti testova** (izvršene lokalno, zatim vraćeno): kad se provjera izvodi bez zajedničke transakcije, novi replay test pada; kad pravilo pristupa propušta sve, padaju sva tri testa pristupa. Ukupno lokalno: 65 testova.

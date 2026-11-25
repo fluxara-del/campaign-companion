@@ -50,6 +50,21 @@ describe("Baza odbija nevaljane veze i izmjene povijesti", () => {
     db.close();
   });
 
+  it("veza dnevnika i događaja mora ostati unutar jedne kampanje", () => {
+    const { db } = freshDb(tpl);
+    seed(db);
+    play(db, 1);
+    executeBatch(db, OWNER, batch([cmd("ApplyHealing", { characterId: `${C2}-PC-001`, amount: 1 })], { campaignId: C2 }));
+    const eventA = (db.prepare(`SELECT id FROM "DomainEvent" WHERE campaignId = ? LIMIT 1`).get(C1) as { id: string }).id;
+    const eventB = (db.prepare(`SELECT id FROM "DomainEvent" WHERE campaignId = ? LIMIT 1`).get(C2) as { id: string }).id;
+    db.prepare(`INSERT INTO "JournalEntry" (id, campaignId, batchId, kind, title, text, visibility, createdAt) VALUES ('je-a', ?, NULL, 'manual', NULL, 'A', 'player', '2026-11-25T00:00:00Z')`).run(C1);
+    const link = db.prepare(`INSERT INTO "JournalEventLink" (campaignId, journalEntryId, eventId) VALUES (?, ?, ?)`);
+    expect(() => link.run(C1, "je-a", eventB)).toThrow(/FOREIGN KEY/);
+    expect(() => link.run(C2, "je-a", eventB)).toThrow(/FOREIGN KEY/);
+    expect(() => link.run(C1, "je-a", eventA)).not.toThrow();
+    db.close();
+  });
+
   it("događaji, receipti i indeks naredbi su append-only", () => {
     const { db } = freshDb(tpl);
     seed(db);
@@ -94,6 +109,28 @@ describe("Replay od baseline-a", () => {
     expect(r.liveStateVersion).toBe(5);
     expect(r.replayHash).toBe(r.liveHash);
     expect(verifyReplay(db, C2).ok).toBe(true);
+    db.close();
+  });
+
+  it("valjan commit drugog pisca tijekom provjere ne izaziva lažno odstupanje", () => {
+    const { db, file } = freshDb(tpl);
+    seed(db);
+    play(db, 2);
+    const other = openDatabase(file);
+    let committed = false;
+    const r = verifyReplay(db, C1, {
+      afterEventsRead: () => {
+        executeBatch(other, OWNER, batch([cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null })], { expectedStateVersion: 2 }));
+        committed = true;
+      },
+    });
+    other.close();
+    expect(committed).toBe(true);
+    expect(r.problems).toEqual([]);
+    expect(r.liveStateVersion).toBe(2);
+    const after = verifyReplay(db, C1);
+    expect(after.ok).toBe(true);
+    expect(after.liveStateVersion).toBe(3);
     db.close();
   });
 
