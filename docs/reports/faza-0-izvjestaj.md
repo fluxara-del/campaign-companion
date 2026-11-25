@@ -12,6 +12,7 @@ Ovaj dokument je samostalan: supervisor ga može pregledati bez pristupa razgovo
 | SR-02 Izmjena primijenjene migracije se ne otkriva | važno prije produkcije | Praćeno s 5 kriterija prihvata (CI zabrana izmjene/brisanja/preimenovanja, usporedba checksuma prije deploya/rollbacka/restorea, test istog imena s drugim SQL-om). | Issue #7 |
 | SR-03 Lock, zaustavljanje pisca, prekid zamjene baze | visoki podatkovni rizik prije produkcije | Praćeno s 5 kriterija prihvata (zajednički lock, razlikovanje prvog pokretanja od neuspjelog stopa, journal zamjene i oporavak, fault-injection testovi uključujući WAL). | Issue #8 |
 | SR-04 Ručni deploy bez provjere CI-a za isti SHA | važno prije produkcije | Praćeno s 5 kriterija prihvata (provjera uspješnog CI-a za repo/`main`/`push`/točan SHA, preskakanje kod nedostatka dokaza ili greške API-ja, isto za rollback, testirana logika bez objave slike). | Issue #9 |
+| SR-01 (2. pregled) Specifikacija §7 i ADR-0004 propisuju različit ključ i rutu za dohvat potvrde | važno | **Riješeno.** Spec §4, §6 (BatchReceipt, CommandIndex), §7 (envelope, algoritam, retry, rute `POST …/batches` i `GET …/batches/:batchId`) i testna matrica plana usklađeni s ADR-0004; ADR opisuje postupak klijenta i 404. Oba dokumenta daju isti postupak slanja, ponavljanja i dohvata potvrde: po `batchId`. | spec §7, ADR-0004 §„Ponašanje u rubnim slučajevima” |
 | N3 Vremenska zona | odluka vlasnika | Zabilježeno kao **otvorena odluka, nije odlučeno**; primjeri konfiguracije vraćeni na `Europe/Warsaw` iz specifikacije. | `NEDOSLJEDNOSTI.md` N3 |
 
 Issuei #7–#9 imaju oznaku `prije-produkcije`: deploy (`DEPLOY_ENABLED`) se ne smije uključiti dok nisu zatvoreni s dokazom.
@@ -42,7 +43,7 @@ Issuei #7–#9 imaju oznaku `prije-produkcije`: deploy (`DEPLOY_ENABLED`) se ne 
 | `docs/planning/01-analiza-ddb.md` | UX referenca, ne predložak |
 | Brief vlasnika (24. 11.) | Faza 0 dodatno: repo, CI, deploy strategija, SQLite politika, rollback, multi-agent workflow |
 
-Planski dokumenti u repozitoriju byte-identični su kopijama u `Kronike-Devet-Zvona/docs/campaign-companion/` (SHA-256 provjeren).
+Planski dokumenti u repozitoriju bili su byte-identični kopijama u `Kronike-Devet-Zvona/docs/campaign-companion/` (SHA-256 provjeren). Nakon drugog supervisor reviewa specifikacija (§4, §6, §7) i testna matrica plana u **repozitoriju** usklađeni su s ADR-0004; kopija u mapi kampanje ostaje nepromijenjena (read-only), pa je verzija u repozitoriju mjerodavna.
 
 ## 2. Stanje repozitorija
 

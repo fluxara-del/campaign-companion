@@ -87,7 +87,9 @@ Unique ograničenja na `BatchReceipt` i `CommandIndex` su posljednja zaštita: a
 
 Odgovori: `200` receipt (`replayed` true/false); `409` `stale_version` | `batch_id_reused` | `command_id_reused`; `422` neispravno/nepodržano (`needs_ruling`, indeks člana); `403` bez ovlasti; `503` zauzeta baza.
 
-HTTP: `POST /api/campaigns/:id/batches` (umjesto `/commands` iz spec §7) i `GET /api/campaigns/:id/batches/:batchId` za oporavak ishoda.
+HTTP (usklađeno sa specifikacijom §7): `POST /api/campaigns/:id/batches` za slanje i ponavljanje, `GET /api/campaigns/:id/batches/:batchId` za oporavak ishoda (spremljeni receipt ili `404` ako batch nije potvrđen; `404` nije dokaz konačnog neuspjeha dok je isti zahtjev možda u obradi, pa klijent tada ponavlja **isti** batch). Ruta po `commandId` ne postoji.
+
+**Postupak klijenta:** (1) generira `batchId` i `commandId`-jeve; (2) šalje `POST …/batches`; (3) nakon timeouta ili prekida ponavlja isti nepromijenjeni batch ili čita `GET …/batches/:batchId`; (4) nakon `409 stale_version` gradi novi batch s novim ID-jevima nad novim snapshotom.
 
 ### Kriteriji prihvata u Fazi 1 (izvršivi testovi)
 

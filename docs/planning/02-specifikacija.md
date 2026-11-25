@@ -73,7 +73,7 @@ flowchart LR
 
 Napredni učinci poput death saves, masivne štete, višeklasnih spell slotova ili složenih reakcija zahtijevaju eksplicitno podržano pravilo i test prije automatske primjene. U suprotnom se prikazuju kao neriješen zahtjev za DM odluku. UI ne smije šutke zaokružiti, odrezati vrijednost ili pretpostaviti uspjeh.
 
-Svaka mutacija prikazuje prijelaz: **Nacrt → Provjera → Spremanje → Spremljeno**, ili **Konflikt / Odbijeno / Veza prekinuta**. Odgovor nakon timeouta nije dokaz neuspjeha: klijent provjerava isti command ID. „Poništi” stvara kompenzacijski događaj nakon provjere kasnijih ovisnosti; ne briše povijest.
+Svaka mutacija prikazuje prijelaz: **Nacrt → Provjera → Spremanje → Spremljeno**, ili **Konflikt / Odbijeno / Veza prekinuta**. Odgovor nakon timeouta nije dokaz neuspjeha: klijent ponavlja isti batch (isti `batchId`) ili dohvaća potvrdu po `batchId` (§7, ADR-0004). „Poništi” stvara kompenzacijski događaj nakon provjere kasnijih ovisnosti; ne briše povijest.
 
 ## 5. Arhitektura
 
@@ -120,8 +120,9 @@ Ovo je model za buduću Prisma shemu; nije izvršiva migracija.
 | ItemInstance | `id`, kampanja, naziv, quantity, ownerId, holderId, location, containerId, equipped/attuned, nullable masa; reference pripadaju istoj kampanji. |
 | Wallet | `id`, vlasnik ili skupina, svrha, integer najmanjih jedinica, naziv valute; osobni i namjenski novac odvojeni. |
 | Session | `id`, broj, početna/završna verzija, status, stvarno vrijeme i odvojeno vrijeme svijeta. |
-| CommandReceipt | `(campaignId, commandId)` unique, hash kanonskog payload-a, actor, outcome, verzija prije/poslije i rezultat za ponavljanje odgovora. |
-| DomainEvent | `id`, `(campaignId, seq)` unique, sessionId, commandId, type, schemaVersion, payload, actor, sourceRef, occurredAt, worldTime, visibility, knowledgeKind. |
+| BatchReceipt | `(campaignId, batchId)` unique, kanonski hash cijelog batcha, actor, verzija prije/poslije, raspon `seq` i rezultat za ponavljanje odgovora. Nastaje samo za potvrđen batch. |
+| CommandIndex | `(campaignId, commandId)` unique, `batchId`, pozicija; sprječava ponovnu uporabu naredbe u drugom batchu. |
+| DomainEvent | `id`, `(campaignId, seq)` unique, sessionId, batchId, commandId, type, schemaVersion, payload, actor, sourceRef, occurredAt, worldTime, visibility, knowledgeKind. |
 | JournalEntry | veze na događaje, naslov, tekst, vrsta manual/projection/summary, revision, visibility; sažetak ima točne sourceEventIds. |
 | ChatMessage | turnId, role, tekst, status, visibility, stateVersionUsed; nedovršeni odgovor ostaje označen. |
 | AiTurn | `id`, kampanja, baseVersion, status, context manifest, prijedlog, povezani receipt; lease za siguran oporavak nakon restarta. |
@@ -135,8 +136,9 @@ Svi entiteti koji imaju kampanju validiraju pripadnost kampanji. JSON payload do
 erDiagram
     CAMPAIGN ||--o{ CHARACTER : contains
     CAMPAIGN ||--o{ SESSION : contains
-    CAMPAIGN ||--o{ COMMAND_RECEIPT : accepts
-    COMMAND_RECEIPT ||--o{ DOMAIN_EVENT : produces
+    CAMPAIGN ||--o{ BATCH_RECEIPT : accepts
+    BATCH_RECEIPT ||--o{ COMMAND_INDEX : contains
+    BATCH_RECEIPT ||--o{ DOMAIN_EVENT : produces
     SESSION ||--o{ DOMAIN_EVENT : records
     CHARACTER ||--o{ RESOURCE_POOL : has
     CHARACTER ||--o{ SPELL_SELECTION : knows
@@ -151,27 +153,29 @@ erDiagram
 
 ## 7. Naredbe, transakcije i sinkronizacija
 
-Minimalni envelope naredbe sadrži `schemaVersion`, `commandId`, `campaignId`, `expectedStateVersion`, `intentRef` i tipizirani payload. Identitet i ovlasti actor-a određuje server iz autentificiranog konteksta; ne vjeruje `actorId` polju iz AI izlaza. `intentRef` povezuje radnju s igračevim odabirom, potvrđenim bacanjem ili dopuštenom DM posljedicom.
+> **Usklađeno s ADR-0004 (25. 11. 2026., supervisor nalaz SR-01).** Jedinica slanja, idempotentnosti, konkurentnosti i potvrde je **batch**. Pojedinačna naredba šalje se kao batch s jednim članom. Puni ugovor, kanonski hash i rubni slučajevi: [ADR-0004](../adr/0004-ugovori-naredbi-i-dogadaja.md). Ako se ovaj odjeljak i ADR razlikuju, vrijedi ADR-0004.
+
+Envelope batcha sadrži `schemaVersion`, `batchId`, `campaignId`, `expectedStateVersion` i uređen popis naredbi. Svaka naredba ima `commandId`, tip, `intentRef` i tipizirani payload; naredba nema vlastitu kampanju ni očekivanu verziju. Identitet i ovlasti actor-a određuje server iz autentificiranog konteksta; ne vjeruje `actorId` polju iz AI izlaza. `intentRef` povezuje radnju s igračevim odabirom, potvrđenim bacanjem ili dopuštenom DM posljedicom.
 
 Početni skup naredbi: `ApplyDamage`, `ApplyHealing`, `SetTemporaryHp`, `ConsumeResource`, `ResolveCast`, `TransferItem`, `SpendCurrency`, `ApplyCondition`, `EndConcentration`, `RecordRoll`, `CompleteRest`, `AppendJournalNote`, `RecordWorldFact`, `CorrectConfirmedFact`. Složena radnja šalje jedan batch, npr. lijek + potrošnja predmeta + HP + journal događaj. Naredbe koriste stabilne ID-jeve, nikada slobodan naziv kao jedini identifikator.
 
 Obrada je strogo određena:
 
-1. Provjeriti identitet, scope kampanje, veličinu, tip i verziju payload-a.
-2. Ako receipt za `commandId` već postoji, usporediti hash. Isti payload vraća isti rezultat; različit payload uz isti ID vraća konflikt.
-3. U kratkoj transakciji usporediti očekivanu verziju s aktualnom, provjeriti preduvjete te izračunati cjelokupan novi snapshot.
-4. Atomski upisati snapshot, sve događaje, minimalnu journal projekciju, receipt i povećanje `stateVersion` jednom po batchu. Event sequence raste po događaju.
+1. Provjeriti identitet, scope kampanje, veličinu, tip i verziju sheme batcha i svih naredbi; izračunati kanonski hash cijelog batcha (redoslijed naredbi je dio hasha).
+2. U kratkoj transakciji koja drži SQLite write lock: ako receipt za `batchId` već postoji, usporediti hash. Isti batch vraća spremljeni rezultat bez upisa; različit sadržaj uz isti `batchId` vraća 409. Naredba čiji je `commandId` već potvrđen u drugom batchu vraća 409 bez upisa.
+3. U istoj transakciji usporediti očekivanu verziju s aktualnom, provjeriti preduvjete redom naredbi te izračunati cjelokupan novi snapshot.
+4. Atomski upisati snapshot, sve događaje, minimalnu journal projekciju, receipt batcha, indeks naredbi i povećanje `stateVersion` jednom po batchu. Event sequence raste po događaju.
 5. Tek nakon commita poslati potvrdu klijentu. Izvoz i bogati AI sažetak mogu kasniti, ali osnovni journal događaj ne smije nestati.
 
-Unique ključ i provjera verzije ostaju unutar iste transakcijske granice. Dva različita command ID-ja s istom početnom verzijom ne mogu oba promijeniti stanje kao da su prva. Konflikt zastarjele verzije vraća HTTP 409 i aktualnu verziju, bez tihog ponavljanja štete ili troška. Automatski retry dopušten je za privremenu DB zauzetost prije konačnog ishoda, s istim command ID-jem. Poslije promjene sadržaja ili rebase-a potreban je novi ID. Transakcije i kontrola konkurentnosti podržani su koncepti Prisma sloja; točan API mora odgovarati zaključanoj verziji. [Prisma: Transactions](https://www.prisma.io/docs/orm/fundamentals/transactions), [Prisma v7: Optimistic concurrency control](https://docs.prisma.io/docs/orm/v7/prisma-client/queries/transactions)
+Unique ključ i provjera verzije ostaju unutar iste transakcijske granice. Dva različita batcha s istom početnom verzijom ne mogu oba promijeniti stanje kao da su prva. Konflikt zastarjele verzije vraća HTTP 409 i aktualnu verziju, bez tihog ponavljanja štete ili troška. Automatski retry dopušten je za privremenu DB zauzetost ili izgubljeni odgovor, uvijek s istim, nepromijenjenim batchem i istim `batchId`. Poslije promjene sadržaja ili rebase-a potreban je novi `batchId` i novi `commandId`-jevi. Transakcije i kontrola konkurentnosti podržani su koncepti Prisma sloja; točan API mora odgovarati zaključanoj verziji. [Prisma: Transactions](https://www.prisma.io/docs/orm/fundamentals/transactions), [Prisma v7: Optimistic concurrency control](https://docs.prisma.io/docs/orm/v7/prisma-client/queries/transactions)
 
 Predloženi HTTP ugovori:
 
 | Endpoint | Rezultat |
 |---|---|
 | `GET /api/campaigns/:id/snapshot` | Dopušteni snapshot, stateVersion i posljednji vidljivi cursor; bez DM tajni. |
-| `POST /api/campaigns/:id/commands` | Receipt potvrđenog batcha; 409 konflikt, 422 nepodržan/neispravan prijedlog, 403 bez ovlasti. |
-| `GET /api/campaigns/:id/commands/:commandId` | Oporavak ishoda nakon timeouta. |
+| `POST /api/campaigns/:id/batches` | Receipt potvrđenog batcha (`replayed` true/false); 409 zastarjela verzija ili ponovljeni ID, 422 nepodržan/neispravan prijedlog, 403 bez ovlasti, 503 zauzeta baza. |
+| `GET /api/campaigns/:id/batches/:batchId` | Oporavak ishoda nakon timeouta: spremljeni receipt ili 404 ako batch nije potvrđen. |
 | `GET /api/campaigns/:id/events?after=cursor` | Paginirani dopušteni događaji za replay. |
 | `GET /api/campaigns/:id/stream` | SSE obavijesti s cursorom; reconnect koristi trajni event log. |
 | `POST /api/campaigns/:id/turns` | Novi AI turn s ID-jem, početnom verzijom i igračevim intentom. |

@@ -18,7 +18,7 @@ Pregled: `01-analiza-ddb.md`, `02-specifikacija.md`, `03-razvojni-plan.md` i bri
 | N10 | **Auto-apply.** Brief traži automatsko ažuriranje potvrđenog stanja; plan ga uvodi postupno (Faza 5 samo prijedlozi, Faza 6 auto-apply). | Slijedi se plan; brief se ispunjava u Fazi 6. |
 | N11 | **Naziv repozitorija.** Brief: „Campaign companion”; GitHub ne dopušta razmake. | `campaign-companion`. |
 | N12 | **Stanje kampanje u specifikaciji** (`stateVersion: 2`, `KDZ-S001-E013`, 23. 11.) je snimka, ne činjenica. | Importer uvijek ponovno čita izvore; brojke iz specifikacije služe samo kao regresijski primjer. |
-| N14 | **Ugovor naredbi.** Spec §7 opisuje idempotentnost po `commandId` i endpoint `/commands`, a složene radnje kao batch. | ADR-0004 (SR-01): jedinica idempotentnosti je batch (`batchId`, kanonski hash, jedan receipt); pojedinačna naredba je batch s jednim članom; endpoint `/batches`. |
+| N14 | **Ugovor naredbi.** Spec §7 opisuje idempotentnost po `commandId` i endpoint `/commands`, a složene radnje kao batch. | ADR-0004 (SR-01): jedinica idempotentnosti je batch (`batchId`, kanonski hash, jedan receipt); pojedinačna naredba je batch s jednim članom; endpoint `/batches`. **Primijenjeno:** §6, §7 i §4 specifikacije te testna matrica plana usklađeni su s ADR-0004 (kopija u ovom repozitoriju; izvorna kopija u mapi kampanje nije mijenjana). |
 | N13 | **Zaštita grane i odobrenja na besplatnom planu.** Brief traži zaštitu `main` i odobrenje vlasnika; na privatnom repozitoriju to traži GitHub Pro. Uz to GitHub ne dopušta autoru da odobri vlastiti PR, a PR-ove otvara vlasnikov račun. | Vidi izvještaj Faze 0 i `docs/operations/multi-agent-workflow.md`. |
 
 ## Otvorene odluke (blokiraju ugovore na kraju Faze 0 ili kasnije faze)
