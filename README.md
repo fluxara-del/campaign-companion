@@ -39,6 +39,8 @@ Aplikacija je na <http://localhost:3000>, health check na `/api/health`.
 | `npm run db:backup -- --out ./backups` | Konzistentna kopija + integritet + manifest |
 | `npm run db:verify -- --backup <datoteka>` | Provjera kopije (hash + integrity_check) |
 | `npm run db:restore -- --backup <datoteka> --confirm` | Restore (aplikacija zaustavljena; stara baza se premješta, ne briše) |
+| `npm run dev:seed -- --db ./data/dev.db` | Sintetička demo kampanja za lokalni razvoj (uz `KDZ_AUTH_MODE=local-owner` u `.env`) |
+| `npm run test:e2e` | Playwright e2e (desktop i 390 px) nad privremenom bazom |
 | `npm run import:trial -- --source <kampanja>` | Probni uvoz u zasebnu bazu nad kopijom izvora (`import-sandbox/`, izvan Gita); pokretati dok se kampanja ne mijenja |
 
 ## Način rada
@@ -49,7 +51,7 @@ Razvoj ide kroz feature grane i pull requestove prema `main`; CI mora proći pri
 
 - Planiranje: [analiza](docs/planning/01-analiza-ddb.md), [specifikacija](docs/planning/02-specifikacija.md), [razvojni plan](docs/planning/03-razvojni-plan.md), [nedosljednosti i otvorene odluke](docs/planning/NEDOSLJEDNOSTI.md)
 - Odluke: [docs/adr](docs/adr/)
-- Izvještaji: [Faza 0](docs/reports/faza-0-izvjestaj.md), [Faza 1](docs/reports/faza-1-izvjestaj.md), [Faza 2](docs/reports/faza-2-izvjestaj.md)
+- Izvještaji: [Faza 0](docs/reports/faza-0-izvjestaj.md), [Faza 1](docs/reports/faza-1-izvjestaj.md), [Faza 2](docs/reports/faza-2-izvjestaj.md), [Faza 3a](docs/reports/faza-3a-izvjestaj.md), [Faza 3b](docs/reports/faza-3b-izvjestaj.md)
 - Pravila za agente: [CLAUDE.md](CLAUDE.md), [AGENTS.md](AGENTS.md)
 - Operacije: [CI/CD](docs/operations/ci-cd.md), [ZimaOS deployment](docs/operations/zimaos-deployment.md), [SQLite sigurnost](docs/operations/sqlite-sigurnost.md), [rollback i restore](docs/operations/rollback-i-restore.md), [tajne i konfiguracija](docs/operations/tajne-i-konfiguracija.md), [multi-agent workflow](docs/operations/multi-agent-workflow.md)
 

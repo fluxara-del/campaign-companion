@@ -84,6 +84,35 @@ jobs:
       - name: Testovi uvoza (stvarni NTFS junctioni, TOCTOU, BOM)
         run: npx vitest run tests/db/import.test.ts
 
+  e2e:
+    name: E2E (Playwright, desktop i 390 px)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalacija ovisnosti
+        run: npm ci --no-fund
+
+      - name: Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Production build
+        run: npm run build
+
+      - name: E2E testovi (privremena sintetička baza, samo 127.0.0.1)
+        run: npm run test:e2e -- --trace off
+
   docker:
     name: Docker image i smoke test
     runs-on: ubuntu-24.04
