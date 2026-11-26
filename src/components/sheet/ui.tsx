@@ -10,9 +10,9 @@ export function Button({ className, variant = "primary", ...props }: ButtonHTMLA
       {...props}
       className={cn(
         "inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        variant === "primary" && "bg-zvono text-white hover:bg-zvono/90",
-        variant === "quiet" && "border border-current/25 hover:bg-current/5",
-        variant === "danger" && "bg-upozorenje text-white hover:bg-upozorenje/90",
+        variant === "primary" && "bg-okvir text-white hover:bg-okvir-tamni",
+        variant === "quiet" && "border border-current/30 bg-papir hover:bg-podloga",
+        variant === "danger" && "border-2 border-okvir bg-papir font-bold uppercase text-okvir hover:bg-okvir hover:text-white",
         className,
       )}
     />
@@ -22,9 +22,9 @@ export function Button({ className, variant = "primary", ...props }: ButtonHTMLA
 export function Section({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="rounded-lg border border-current/15 p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 id={id} className="font-serif text-lg">
+    <section aria-labelledby={id} className="rounded-md border border-current/10 bg-papir p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-okvir/30 pb-1">
+        <h2 id={id} className="oznaka text-sm text-okvir">
           {title}
         </h2>
         {actions}
@@ -48,7 +48,7 @@ export function NumberField({ label, value, onChange, min, max, id }: { label: s
         max={max}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-11 w-28 rounded-md border border-current/30 bg-transparent px-3 text-base"
+        className="min-h-11 w-28 rounded-md border border-current/40 bg-papir px-3 text-base"
       />
     </label>
   );
@@ -62,7 +62,7 @@ export function TextField({ label, value, onChange, required }: { label: string;
         {label}
         {required ? " (obavezno)" : ""}
       </span>
-      <input id={id} value={value} required={required} onChange={(e) => onChange(e.target.value)} className="min-h-11 rounded-md border border-current/30 bg-transparent px-3 text-base" />
+      <input id={id} value={value} required={required} onChange={(e) => onChange(e.target.value)} className="min-h-11 rounded-md border border-current/40 bg-papir px-3 text-base" />
     </label>
   );
 }
@@ -88,9 +88,9 @@ export function Dialog({ open, onClose, title, children }: { open: boolean; onCl
       ref={ref}
       aria-labelledby={titleId}
       onClose={onClose}
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-current/20 bg-[var(--background)] p-5 text-[var(--foreground)] backdrop:bg-black/50"
+      className="okvir m-auto w-[min(32rem,calc(100vw-2rem))] p-5 text-tekst backdrop:bg-black/50"
     >
-      <h2 id={titleId} className="mb-4 font-serif text-xl">
+      <h2 id={titleId} className="oznaka mb-4 text-base text-okvir">
         {title}
       </h2>
       {children}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Derived } from "@/domain/derived";
 import { ABILITIES, type Ability } from "@/domain/state";
 import type { CharacterSheet } from "@/server/store/sheet";
@@ -13,25 +13,23 @@ type Props = { sheet: CharacterSheet; submit: Submit };
 
 export const ABILITY_HR: Record<Ability, string> = { STR: "Snaga", DEX: "Spretnost", CON: "Izdržljivost", INT: "Inteligencija", WIS: "Mudrost", CHA: "Karizma" };
 const toInt = (v: string): number | null => (/^-?\d+$/.test(v.trim()) ? Number(v) : null);
+const show = (d: Derived, asMod = true) => (d.value === null ? "?" : asMod ? signed(d.value) : String(d.value));
 
-/** Mali okvir sažetka: oznaka gore, vrijednost u sredini, pomoćni tekst dolje. */
-function Tile({ label, value, sub, testId, children }: { label: string; value: string; sub?: string; testId?: string; children?: React.ReactNode }) {
+/** Okvir pokazatelja (ADR-0008): naslov gore, velika vrijednost, oznaka dolje. */
+function Tile({ top, value, bottom, testId, wide }: { top: string; value: string; bottom?: string; testId?: string; wide?: boolean }) {
   return (
-    <div className="flex min-w-[5.5rem] flex-col items-center justify-between rounded-lg border border-current/20 bg-current/[0.02] px-2 py-2 text-center" data-testid={testId}>
-      <p className="text-[11px] font-medium uppercase tracking-wider opacity-80">{label}</p>
-      <p className="font-mono text-2xl leading-tight tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>
+    <div className={`okvir flex flex-col items-center justify-between px-2 py-1.5 text-center ${wide ? "min-w-[6.5rem]" : "min-w-[5.25rem]"}`} data-testid={testId}>
+      <p className="oznaka">{top}</p>
+      <p className="font-mono text-3xl leading-tight tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>
         {value}
       </p>
-      {sub ? <p className="text-xs opacity-80">{sub}</p> : null}
-      {children}
+      {bottom ? <p className="oznaka opacity-80">{bottom}</p> : <span className="h-3" />}
     </div>
   );
 }
 
-const show = (d: Derived, asMod = true) => (d.value === null ? "?" : asMod ? signed(d.value) : String(d.value));
-
 /**
- * Gornja traka sažetka: šest atributa (modifikator veliko, vrijednost malo; klik otvara
+ * Traka sažetka: šest atributa (naziv, modifikator u kutiji, vrijednost u ovalu; klik otvara
  * trajnu promjenu s razlogom), proficiency, brzina, inspiracija, AC i inicijativa.
  */
 export function SummaryStrip({ sheet, submit }: Props) {
@@ -50,10 +48,10 @@ export function SummaryStrip({ sheet, submit }: Props) {
   };
 
   return (
-    <>
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-stretch">
       <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="Atributi">
         {ABILITIES.map((a) => (
-          <li key={a} data-testid={`ability-${a}`}>
+          <li key={a} data-testid={`ability-${a}`} className="pb-3">
             <button
               type="button"
               onClick={() => {
@@ -63,13 +61,13 @@ export function SummaryStrip({ sheet, submit }: Props) {
                 setError(null);
               }}
               aria-label={`Promijeni ${ABILITY_HR[a]}`}
-              className="flex w-full flex-col items-center rounded-lg border border-current/20 px-2 py-2 hover:bg-current/5"
+              className="okvir relative flex h-full w-full min-w-[5.5rem] flex-col items-center px-1 pb-5 pt-1.5 hover:brightness-95"
             >
-              <span className="text-[11px] font-medium uppercase tracking-wider opacity-80">{ABILITY_HR[a]}</span>
-              <span className="font-mono text-3xl leading-tight tabular-nums" data-testid={`ability-${a}-mod`}>
+              <span className="oznaka">{ABILITY_HR[a]}</span>
+              <span className="kutijica mt-1 w-[4.25rem] py-0.5 font-mono text-3xl leading-tight tabular-nums" data-testid={`ability-${a}-mod`}>
                 {signed(d.abilities[a].modifier.value)}
               </span>
-              <span className="mt-1 rounded-full border border-current/30 px-3 text-sm tabular-nums" data-testid={`ability-${a}-score`}>
+              <span className="oval absolute -bottom-3 left-1/2 min-w-12 -translate-x-1/2 px-2 text-base font-semibold tabular-nums" data-testid={`ability-${a}-score`}>
                 {d.abilities[a].score ?? "?"}
               </span>
             </button>
@@ -77,12 +75,16 @@ export function SummaryStrip({ sheet, submit }: Props) {
         ))}
       </ul>
 
-      <div className="flex flex-wrap gap-2" aria-label="Pokazatelji">
-        <Tile label="Proficiency" value={show(d.proficiencyBonus)} sub="bonus" testId="pb" />
-        <Tile label="Brzina" value={d.speed.value === null ? "?" : `${d.speed.value}`} sub="ft" testId="speed" />
-        <Tile label="Inspiracija" value={!inspiration || inspiration.current === null ? "?" : inspiration.current > 0 ? "da" : "ne"} sub={!inspiration || inspiration.current === null ? "nepoznato" : "Heroic"} testId="inspiration" />
-        <Tile label="Klasa oklopa" value={show(d.armorClass, false)} sub={d.armorClass.override ? "override" : "AC"} testId="ac" />
-        <Tile label="Inicijativa" value={show(d.initiative)} testId="initiative" />
+      <div className="flex flex-wrap gap-2 xl:flex-nowrap" aria-label="Pokazatelji">
+        <Tile top="Proficiency" value={show(d.proficiencyBonus)} bottom="Bonus" testId="pb" wide />
+        <Tile top="Hodanje" value={d.speed.value === null ? "?" : `${d.speed.value}`} bottom="Brzina (ft)" testId="speed" wide />
+        <Tile
+          top="Heroic"
+          value={!inspiration || inspiration.current === null ? "?" : inspiration.current > 0 ? "✓" : "–"}
+          bottom={!inspiration || inspiration.current === null ? "Inspiracija ?" : "Inspiracija"}
+          testId="inspiration"
+          wide
+        />
       </div>
 
       <Dialog open={edit !== null} onClose={() => setEdit(null)} title={`Trajna promjena: ${edit ? ABILITY_HR[edit] : ""}`}>
@@ -90,7 +92,7 @@ export function SummaryStrip({ sheet, submit }: Props) {
           <NumberField label="Nova vrijednost (1–30)" value={value} onChange={setValue} min={1} max={30} />
           <TextField label="Razlog" value={reason} onChange={setReason} required />
           {error ? (
-            <p role="alert" className="text-sm text-upozorenje">
+            <p role="alert" className="text-sm text-okvir-tamni">
               {error}
             </p>
           ) : null}
@@ -102,11 +104,34 @@ export function SummaryStrip({ sheet, submit }: Props) {
           </div>
         </div>
       </Dialog>
-    </>
+    </div>
   );
 }
 
-/** Okvir HP-a s unosom iznosa i odvojenim radnjama Liječenje / Šteta / Privremeni HP. */
+/** AC (štit) i inicijativa uz radni panel, kao u primjeru. */
+export function CombatTiles({ sheet }: { sheet: CharacterSheet }) {
+  const d = sheet.derived;
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Tile top="Inicijativa" value={show(d.initiative)} testId="initiative" wide />
+      <div className="okvir flex min-w-[6.5rem] flex-col items-center px-2 py-1.5 text-center" data-testid="ac" style={{ borderRadius: "0.6rem 0.6rem 2.75rem 2.75rem" }}>
+        <p className="oznaka">Oklop</p>
+        <p className="font-mono text-3xl leading-tight tabular-nums" data-testid="ac-value">
+          {show(d.armorClass, false)}
+        </p>
+        <p className="oznaka opacity-80">{d.armorClass.override ? "Klasa*" : "Klasa"}</p>
+      </div>
+      <div className="okvir flex min-w-[12rem] flex-1 flex-col justify-center px-3 py-1.5 text-sm" data-testid="defenses">
+        <p className="oznaka">Uvjeti</p>
+        <p>{sheet.conditions.length ? sheet.conditions.map((c) => c.name).join(", ") : "Nema aktivnih uvjeta"}</p>
+        <p className="oznaka mt-1">Koncentracija</p>
+        <p>{sheet.concentration ? sheet.concentration.spellName : "—"}</p>
+      </div>
+    </div>
+  );
+}
+
+/** HP okvir: Liječenje / iznos / Šteta lijevo, trenutni / maks. / privremeni desno. */
 export function HpBox({ sheet, submit }: Props) {
   const c = sheet.character;
   const [amount, setAmount] = useState("");
@@ -128,13 +153,14 @@ export function HpBox({ sheet, submit }: Props) {
           : await submit(`Privremeni HP ${n}`, [{ type: "SetTemporaryHp", payload: { characterId: c.id, amount: n, mode: "replace" } }]);
     if (ok) setAmount("");
   };
+  const small = "min-h-11 min-w-24 rounded-md border-2 bg-papir px-3 oznaka text-xs";
   return (
-    <section aria-label="Životni bodovi" className="rounded-lg border border-current/20 p-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex flex-col gap-2">
-          <Button onClick={() => act("heal")} className="min-w-24">
+    <section aria-label="Životni bodovi" className="okvir p-2">
+      <div className="flex items-stretch gap-3">
+        <div className="flex flex-col gap-1">
+          <button type="button" onClick={() => act("heal")} className={`${small} border-ljekovito text-ljekovito hover:bg-ljekovito hover:text-white`}>
             Liječenje
-          </Button>
+          </button>
           <label htmlFor="hp-amount" className="sr-only">
             Iznos
           </label>
@@ -145,30 +171,32 @@ export function HpBox({ sheet, submit }: Props) {
             min={1}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="Iznos"
-            className="min-h-11 w-24 rounded-md border border-current/30 bg-transparent px-2 text-center text-base"
+            className="kutijica min-h-11 w-24 px-2 text-center text-base"
           />
-          <Button variant="danger" onClick={() => act("damage")} className="min-w-24">
+          <button type="button" onClick={() => act("damage")} className={`${small} border-okvir text-okvir hover:bg-okvir hover:text-white`}>
             Šteta
-          </Button>
+          </button>
         </div>
-        <div className="flex flex-1 items-end justify-around gap-3 text-center">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wider opacity-80">Trenutni</p>
+        <div className="flex flex-1 flex-col justify-between">
+          <div className="grid grid-cols-[1fr_auto_1fr_1fr] items-end gap-x-2 text-center">
+            <p className="oznaka">Trenutni</p>
+            <span />
+            <p className="oznaka">Maks.</p>
+            <p className="oznaka">Privremeni</p>
             <p className="font-mono text-4xl tabular-nums" data-testid="hp-current">
               {c.hpCurrent}
             </p>
-          </div>
-          <p className="pb-1 font-mono text-3xl opacity-60">/</p>
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wider opacity-80">Maks.</p>
+            <p className="pb-1 font-mono text-3xl">/</p>
             <p className="font-mono text-4xl tabular-nums">{c.hpMax ?? "?"}</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wider opacity-80">Privremeni</p>
-            <p className="font-mono text-4xl tabular-nums" data-testid="hp-temp-value">
-              {c.hpTemp > 0 ? c.hpTemp : "—"}
+            <p className="font-mono text-4xl tabular-nums opacity-80" data-testid="hp-temp-value">
+              {c.hpTemp > 0 ? c.hpTemp : "--"}
             </p>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="oznaka">Životni bodovi</p>
+            <button type="button" onClick={() => act("temp")} className="oznaka min-h-11 rounded-md border border-current/30 px-2 text-[11px] hover:bg-podloga">
+              Postavi privremeni HP
+            </button>
           </div>
         </div>
       </div>
@@ -178,14 +206,8 @@ export function HpBox({ sheet, submit }: Props) {
       <p className="sr-only" data-testid="hp-temp">
         Privremeni HP: {c.hpTemp}
       </p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs uppercase tracking-wider">Životni bodovi</p>
-        <Button variant="quiet" onClick={() => act("temp")}>
-          Postavi privremeni HP
-        </Button>
-      </div>
       {error ? (
-        <p role="alert" className="mt-1 text-sm text-upozorenje" data-testid="hp-error">
+        <p role="alert" className="mt-1 text-sm text-okvir-tamni" data-testid="hp-error">
           {error}
         </p>
       ) : null}
@@ -199,25 +221,25 @@ export function HpBox({ sheet, submit }: Props) {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children, testId }: { title: string; children: ReactNode; testId?: string }) {
   return (
-    <section aria-label={title} className="rounded-lg border border-current/20 p-3">
+    <section aria-label={title} className="okvir p-3" data-testid={testId}>
       {children}
-      <p className="mt-2 text-center text-xs font-medium uppercase tracking-wider opacity-80">{title}</p>
+      <p className="oznaka mt-3 text-center">{title}</p>
     </section>
   );
 }
 
-/** Saving throwovi: 2 × 3 mreža s oznakom proficiencyja (znak, ne samo boja). */
 export function SavesCard({ sheet }: { sheet: CharacterSheet }) {
   const d = sheet.derived;
   return (
     <Card title="Saving throwovi">
       <div className="grid grid-cols-2 gap-2">
         {ABILITIES.map((a) => (
-          <DerivedValue key={a} label={`${d.saves[a].proficient ? "● " : "○ "}${a}`} value={d.saves[a]} testId={`save-${a}`} compact />
+          <DerivedValue key={a} label={`${d.saves[a].proficient ? "●" : "○"} ${a}`} value={d.saves[a]} testId={`save-${a}`} variant="pill" />
         ))}
       </div>
+      <p className="mt-2 text-center text-xs opacity-80">● proficiency · klik za izračun</p>
     </Card>
   );
 }
@@ -227,31 +249,49 @@ export function SensesCard({ sheet }: { sheet: CharacterSheet }) {
   return (
     <Card title="Osjetila">
       <div className="grid gap-2">
-        <DerivedValue label="Pasivna percepcija" value={d.passivePerception} asModifier={false} testId="passive-perception" compact />
-        <DerivedValue label="Pasivna istraga" value={d.passiveInvestigation} asModifier={false} compact />
-        <DerivedValue label="Pasivni uvid" value={d.passiveInsight} asModifier={false} compact />
+        <DerivedValue label="Pasivna percepcija" value={d.passivePerception} asModifier={false} testId="passive-perception" variant="sense" />
+        <DerivedValue label="Pasivna istraga" value={d.passiveInvestigation} asModifier={false} variant="sense" />
+        <DerivedValue label="Pasivni uvid" value={d.passiveInsight} asModifier={false} variant="sense" />
       </div>
     </Card>
   );
 }
 
-/** Vještine kao tablica: proficiency, atribut, naziv, bonus (s objašnjenjem). */
+export function ProficienciesCard({ sheet }: { sheet: CharacterSheet }) {
+  return (
+    <Card title="Značajke i obuka">
+      <ul className="space-y-1 text-sm">
+        {sheet.features.length === 0 ? <li>Nema zabilježenih značajki.</li> : null}
+        {sheet.features.map((f) => (
+          <li key={f.id} className="border-b border-current/10 pb-1">
+            {f.name}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+/** Vještine: PROF · ATR · VJEŠTINA · BONUS. */
 export function SkillsCard({ sheet }: { sheet: CharacterSheet }) {
   return (
     <Card title="Vještine">
-      <div className="grid grid-cols-[2rem_2.75rem_1fr] items-center gap-x-1 px-1 pb-1 text-[11px] font-medium uppercase tracking-wider opacity-80" aria-hidden>
-        <span>Prof.</span>
-        <span>Atr.</span>
-        <span>Vještina · bonus</span>
+      <div className="grid grid-cols-[2rem_2.5rem_1fr] items-center gap-x-1 border-b border-current/20 pb-1" aria-hidden>
+        <span className="oznaka underline">Prof.</span>
+        <span className="oznaka underline">Atr.</span>
+        <span className="oznaka flex justify-between underline">
+          <span>Vještina</span>
+          <span>Bonus</span>
+        </span>
       </div>
-      <ul className="grid gap-1">
+      <ul>
         {Object.entries(sheet.derived.skills).map(([name, s]) => (
-          <li key={name} className="grid grid-cols-[2rem_2.75rem_1fr] items-center gap-x-1">
-            <span aria-label={s.proficiency === "none" ? "bez proficiencyja" : s.proficiency} className="text-center">
+          <li key={name} className="grid grid-cols-[2rem_2.5rem_1fr] items-center gap-x-1">
+            <span aria-label={s.proficiency === "none" ? "bez proficiencyja" : s.proficiency} className="text-center text-sm">
               {s.proficiency === "expertise" ? "◆" : s.proficiency === "proficient" ? "●" : "○"}
             </span>
-            <span className="text-xs opacity-80">{s.ability}</span>
-            <DerivedValue label={name} value={s} testId={`skill-${name.replace(/\s/g, "-")}`} compact />
+            <span className="text-xs font-semibold opacity-80">{s.ability}</span>
+            <DerivedValue label={name} value={s} testId={`skill-${name.replace(/\s/g, "-")}`} variant="skill" />
           </li>
         ))}
       </ul>

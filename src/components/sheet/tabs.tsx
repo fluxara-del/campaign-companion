@@ -27,12 +27,6 @@ export function CombatTab({ sheet, submit }: TabProps) {
           {error}
         </p>
       ) : null}
-      <Section title="Brzina i spell vrijednosti">
-        <div className="grid gap-2">
-          <DerivedValue label="Brzina (ft)" value={sheet.derived.speed} asModifier={false} />
-          <DerivedValue label="Proficiency bonus" value={sheet.derived.proficiencyBonus} />
-        </div>
-      </Section>
 
       <Section title="Koncentracija">
         {sheet.concentration ? (
@@ -319,11 +313,65 @@ export function MagicTab({ sheet, submit }: TabProps) {
   );
 }
 
+/** Pregled i potvrda odmora (hash pregleda veže potvrdu uz ono što je igrač vidio). */
+export function RestDialog({ sheet, submit, kind, onClose }: TabProps & { kind: "short" | "long" | null; onClose: () => void }) {
+  const rest = kind;
+  const setRest = (next: null) => next === null && onClose();
+  const preview = rest ? sheet.restPreview[rest] : null;
+  return (
+    <Dialog open={preview !== null} onClose={() => setRest(null)} title={rest === "long" ? "Pregled dugog odmora" : "Pregled kratkog odmora"}>
+      {preview ? (
+        <div className="space-y-3 text-sm" data-testid="rest-preview">
+          {preview.hp ? (
+            <p>
+              HP: {preview.hp.before} → {preview.hp.after}
+            </p>
+          ) : null}
+          {preview.temp ? (
+            <p>
+              Privremeni HP: {preview.temp.before} → {preview.temp.after}
+            </p>
+          ) : null}
+          {preview.pools.map((p) => (
+            <p key={p.resourcePoolId}>
+              {p.resourceKey}: {p.before ?? "?"} → {p.after ?? "?"}
+            </p>
+          ))}
+          {preview.pools.length === 0 && !preview.hp && !preview.temp ? <p>Nema promjena.</p> : null}
+          {preview.unchanged.length > 0 ? (
+            <div>
+              <p className="font-medium">Ne mijenja se:</p>
+              <ul className="list-disc pl-5">
+                {preview.unchanged.map((u) => (
+                  <li key={u.what}>
+                    {u.what}: {u.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                if (await submit(rest === "long" ? "Dugi odmor" : "Kratki odmor", [{ type: "CompleteRest", payload: { characterId: sheet.character.id, kind: rest, previewHash: preview.hash } }])) setRest(null);
+              }}
+            >
+              Potvrdi odmor
+            </Button>
+            <Button variant="quiet" onClick={() => setRest(null)}>
+              Odustani
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
+  );
+}
+
 /* ------------------------------ Sposobnosti ---------------------------- */
 
 export function AbilitiesTab({ sheet, submit }: TabProps) {
   const [rest, setRest] = useState<"short" | "long" | null>(null);
-  const preview = rest ? sheet.restPreview[rest] : null;
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Section title="Resursi">
@@ -365,52 +413,7 @@ export function AbilitiesTab({ sheet, submit }: TabProps) {
           </Button>
         </div>
       </Section>
-      <Dialog open={preview !== null} onClose={() => setRest(null)} title={rest === "long" ? "Pregled dugog odmora" : "Pregled kratkog odmora"}>
-        {preview ? (
-          <div className="space-y-3 text-sm" data-testid="rest-preview">
-            {preview.hp ? (
-              <p>
-                HP: {preview.hp.before} → {preview.hp.after}
-              </p>
-            ) : null}
-            {preview.temp ? (
-              <p>
-                Privremeni HP: {preview.temp.before} → {preview.temp.after}
-              </p>
-            ) : null}
-            {preview.pools.map((p) => (
-              <p key={p.resourcePoolId}>
-                {p.resourceKey}: {p.before ?? "?"} → {p.after ?? "?"}
-              </p>
-            ))}
-            {preview.pools.length === 0 && !preview.hp && !preview.temp ? <p>Nema promjena.</p> : null}
-            {preview.unchanged.length > 0 ? (
-              <div>
-                <p className="font-medium">Ne mijenja se:</p>
-                <ul className="list-disc pl-5">
-                  {preview.unchanged.map((u) => (
-                    <li key={u.what}>
-                      {u.what}: {u.reason}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <div className="flex gap-2">
-              <Button
-                onClick={async () => {
-                  if (await submit(rest === "long" ? "Dugi odmor" : "Kratki odmor", [{ type: "CompleteRest", payload: { characterId: sheet.character.id, kind: rest, previewHash: preview.hash } }])) setRest(null);
-                }}
-              >
-                Potvrdi odmor
-              </Button>
-              <Button variant="quiet" onClick={() => setRest(null)}>
-                Odustani
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </Dialog>
+      <RestDialog sheet={sheet} submit={submit} kind={rest} onClose={() => setRest(null)} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # Kronike Devet Zvona — Campaign Companion
 
-Privatna, self-hosted web-aplikacija za solo D&D 5e (2024) kampanju *Kronike Devet Zvona*: digitalni character sheet, dnevnik kampanje i integrirani AI Dungeon Master. Sučelje je na hrvatskom, dizajn je originalan, a radi na mobitelu i desktopu.
+Privatna, self-hosted web-aplikacija za solo D&D 5e (2024) kampanju *Kronike Devet Zvona*: digitalni character sheet, dnevnik kampanje i integrirani AI Dungeon Master. Sučelje je na hrvatskom, izgled character sheeta slijedi vlasnikov referentni primjer (ADR-0008, vlastiti kod, bez tuđih asseta), a radi na mobitelu i desktopu.
 
 > **Status: Faza 2 u pregledu (PR).** Postoje shema, domenski servis s batch idempotentnošću, event log, replay te probni uvoz postojeće kampanje u zasebnu bazu nad kopijom izvora. Nema UI-ja, HTTP ruta za pisanje ni AI-ja. Postojeće datoteke kampanje ostaju autoritativne dok se migracija izričito ne potvrdi.
 
