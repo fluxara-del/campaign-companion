@@ -91,7 +91,7 @@ export const SetAbilityScore = z.strictObject({
   payload: z.strictObject({ characterId: EntityId, ability: AbilityKey, value: z.int().min(1).max(30), reason: Reason }),
 });
 
-export const STAT_TARGETS = /^(proficiencyBonus|initiative|ac|speed|spellSaveDc|spellAttack|passive:Perception|mod:(STR|DEX|CON|INT|WIS|CHA)|save:(STR|DEX|CON|INT|WIS|CHA)|skill:[A-Za-z ]{3,30})$/;
+export const STAT_TARGETS = /^(proficiencyBonus|initiative|ac|speed|spellSaveDc|spellAttack|passive:(Perception|Insight|Investigation)|mod:(STR|DEX|CON|INT|WIS|CHA)|save:(STR|DEX|CON|INT|WIS|CHA)|skill:[A-Za-z ]{3,30})$/;
 
 /** Override izvedene vrijednosti s razlogom; `value: null` uklanja override. */
 export const SetStatOverride = z.strictObject({

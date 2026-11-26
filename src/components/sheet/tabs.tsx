@@ -1,182 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { ABILITIES, type Ability } from "@/domain/state";
 import type { CharacterSheet, ItemNode } from "@/server/store/sheet";
 import { DerivedValue } from "./Derived";
-import { Button, Dialog, NumberField, Section, TextField, signed } from "./ui";
+import { Button, Dialog, NumberField, Section, TextField } from "./ui";
 import type { CommandInput } from "./useSheet";
 
 export type Submit = (label: string, commands: CommandInput[]) => Promise<boolean>;
 type TabProps = { sheet: CharacterSheet; submit: Submit };
 
-const ABILITY_HR: Record<Ability, string> = { STR: "Snaga", DEX: "Spretnost", CON: "Izdržljivost", INT: "Inteligencija", WIS: "Mudrost", CHA: "Karizma" };
 
 const toInt = (v: string): number | null => (/^-?\d+$/.test(v.trim()) ? Number(v) : null);
-
-/* ------------------------------- Pregled ------------------------------- */
-
-export function OverviewTab({ sheet, submit }: TabProps) {
-  const d = sheet.derived;
-  const [edit, setEdit] = useState<Ability | null>(null);
-  const [value, setValue] = useState("");
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const open = (a: Ability) => {
-    setEdit(a);
-    setValue(String(sheet.character.abilities[a] ?? ""));
-    setReason("");
-    setError(null);
-  };
-  const confirm = async () => {
-    const n = toInt(value);
-    if (n === null || n < 1 || n > 30) return setError("Vrijednost mora biti cijeli broj od 1 do 30.");
-    if (!reason.trim()) return setError("Trajna promjena traži razlog.");
-    if (await submit(`${edit} → ${n}`, [{ type: "SetAbilityScore", payload: { characterId: sheet.character.id, ability: edit, value: n, reason: reason.trim() } }])) setEdit(null);
-  };
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Section title="Atributi">
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {ABILITIES.map((a) => (
-            <li key={a} className="rounded-md border border-current/15 p-3" data-testid={`ability-${a}`}>
-              <p className="text-xs uppercase tracking-wide">{ABILITY_HR[a]}</p>
-              <p className="font-mono text-2xl tabular-nums" data-testid={`ability-${a}-mod`}>
-                {signed(d.abilities[a].modifier.value)}
-              </p>
-              <p className="text-sm">
-                Vrijednost <span data-testid={`ability-${a}-score`}>{d.abilities[a].score ?? "?"}</span>
-              </p>
-              <Button variant="quiet" className="mt-2 w-full" onClick={() => open(a)} aria-label={`Promijeni ${ABILITY_HR[a]}`}>
-                Promijeni
-              </Button>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-xs">Promjena atributa je trajna promjena lika (ne potrošnja u igri) i traži razlog.</p>
-      </Section>
-
-      <Section title="Saving throwovi">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {ABILITIES.map((a) => (
-            <DerivedValue key={a} label={`${ABILITY_HR[a]}${d.saves[a].proficient ? " (proficiency)" : ""}`} value={d.saves[a]} testId={`save-${a}`} />
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Vještine">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {Object.entries(d.skills).map(([name, s]) => (
-            <DerivedValue key={name} label={`${name} (${s.ability})${s.proficiency === "expertise" ? " · expertise" : s.proficiency === "proficient" ? " · proficiency" : ""}`} value={s} testId={`skill-${name.replace(/\s/g, "-")}`} />
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Ostalo">
-        <div className="grid gap-2">
-          <DerivedValue label="Proficiency bonus" value={d.proficiencyBonus} />
-          <DerivedValue label="Pasivna percepcija" value={d.passivePerception} asModifier={false} testId="passive-perception" />
-          <DerivedValue label="Spell save DC" value={d.spellSaveDc} asModifier={false} testId="spell-dc" />
-          <DerivedValue label="Spell attack" value={d.spellAttack} testId="spell-attack" />
-        </div>
-        <ul className="mt-3 list-disc pl-5 text-xs">
-          {d.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      </Section>
-
-      <Dialog open={edit !== null} onClose={() => setEdit(null)} title={`Trajna promjena: ${edit ? ABILITY_HR[edit] : ""}`}>
-        <div className="flex flex-col gap-3">
-          <NumberField label="Nova vrijednost (1–30)" value={value} onChange={setValue} min={1} max={30} />
-          <TextField label="Razlog" value={reason} onChange={setReason} required />
-          {error ? (
-            <p role="alert" className="text-sm text-upozorenje">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex gap-2">
-            <Button onClick={confirm}>Spremi promjenu</Button>
-            <Button variant="quiet" onClick={() => setEdit(null)}>
-              Odustani
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    </div>
-  );
-}
 
 /* -------------------------------- Borba -------------------------------- */
 
 export function CombatTab({ sheet, submit }: TabProps) {
   const c = sheet.character;
-  const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [roll, setRoll] = useState("");
   const [cond, setCond] = useState({ name: "", source: "" });
-  const n = toInt(amount);
-
-  const preview = (() => {
-    if (n === null || n <= 0) return null;
-    const fromTemp = Math.min(c.hpTemp, n);
-    const hpAfterDamage = Math.max(0, c.hpCurrent - (n - fromTemp));
-    const hpAfterHeal = c.hpMax === null ? null : Math.min(c.hpMax, c.hpCurrent + n);
-    return { fromTemp, hpAfterDamage, hpAfterHeal };
-  })();
-
-  const act = async (kind: "damage" | "heal" | "temp") => {
-    if (n === null || n <= 0 || n > 10_000) return setError("Unesi cijeli broj veći od 0.");
-    setError(null);
-    const ok =
-      kind === "damage"
-        ? await submit(`Šteta ${n}`, [{ type: "ApplyDamage", payload: { characterId: c.id, amount: n, damageType: null } }])
-        : kind === "heal"
-          ? await submit(`Liječenje ${n}`, [{ type: "ApplyHealing", payload: { characterId: c.id, amount: n } }])
-          : await submit(`Privremeni HP ${n}`, [{ type: "SetTemporaryHp", payload: { characterId: c.id, amount: n, mode: "replace" } }]);
-    if (ok) setAmount("");
-  };
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Section title="Životni bodovi (HP)">
-        <p className="font-mono text-3xl tabular-nums" data-testid="hp">
-          {c.hpCurrent} / {c.hpMax ?? "?"}
+      {error ? (
+        <p role="alert" className="text-sm text-upozorenje lg:col-span-2">
+          {error}
         </p>
-        <p className="text-sm" data-testid="hp-temp">
-          Privremeni HP: {c.hpTemp}
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <NumberField label="Iznos" value={amount} onChange={setAmount} min={1} id="hp-amount" />
-          <Button variant="danger" onClick={() => act("damage")}>
-            Šteta
-          </Button>
-          <Button onClick={() => act("heal")}>Liječenje</Button>
-          <Button variant="quiet" onClick={() => act("temp")}>
-            Postavi privremeni HP
-          </Button>
-        </div>
-        {error ? (
-          <p role="alert" className="mt-2 text-sm text-upozorenje" data-testid="hp-error">
-            {error}
-          </p>
-        ) : null}
-        {preview ? (
-          <p className="mt-2 text-sm" data-testid="hp-preview">
-            Pregled: šteta {n} → privremeni HP upija {preview.fromTemp}, HP {c.hpCurrent} → {preview.hpAfterDamage}; liječenje {n} → HP{" "}
-            {preview.hpAfterHeal === null ? "nepoznat maksimum" : `${c.hpCurrent} → ${preview.hpAfterHeal}`}.
-          </p>
-        ) : null}
-        <p className="mt-2 text-xs">Privremeni HP se ne zbraja: novi iznos zamjenjuje postojeći.</p>
-      </Section>
-
-      <Section title="Borbeni pokazatelji">
+      ) : null}
+      <Section title="Brzina i spell vrijednosti">
         <div className="grid gap-2">
-          <DerivedValue label="Klasa oklopa (AC)" value={sheet.derived.armorClass} asModifier={false} testId="ac" />
-          <DerivedValue label="Inicijativa" value={sheet.derived.initiative} testId="initiative" />
           <DerivedValue label="Brzina (ft)" value={sheet.derived.speed} asModifier={false} />
+          <DerivedValue label="Proficiency bonus" value={sheet.derived.proficiencyBonus} />
         </div>
       </Section>
 
@@ -383,6 +237,10 @@ export function MagicTab({ sheet, submit }: TabProps) {
         </ul>
       </Section>
       <Section title="Spell slotovi">
+        <div className="mb-3 grid gap-2">
+          <DerivedValue label="Spell save DC" value={sheet.derived.spellSaveDc} asModifier={false} testId="spell-dc" />
+          <DerivedValue label="Spell attack" value={sheet.derived.spellAttack} testId="spell-attack" />
+        </div>
         <ul className="space-y-2">
           {slots.map((r) => (
             <li key={r.id} className="flex justify-between rounded-md border border-current/15 p-2" data-testid={`pool-${r.resourceKey}`}>

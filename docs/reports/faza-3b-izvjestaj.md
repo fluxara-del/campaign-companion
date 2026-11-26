@@ -33,3 +33,7 @@ Svaki test radi nad vlastitom sintetičkom kampanjom u svježoj privremenoj bazi
 ## Što ne dokazuje
 
 Stvarne iOS/Android uređaje i Safari (390 px je Chromium viewport), čitač zaslona i 200 % zoom (nije automatizirano), autentifikaciju i mrežni pristup (O5), Igru i Dnevnik (Faze 4–6).
+
+## Raspored prema primjeru vlasnika (26. 11. 2026.)
+
+Vlasnik je zatražio izgled prema `primjer dizajna ui.png` (snimka D&D Beyonda, lokalno, izvan Gita). Specifikacija §1 i analiza §10 zabranjuju preuzimanje kompozicije, okvira, pozadina i stila referentnog proizvoda, pa je do vlasnikove odluke primijenjena **opcija 1**: isti *raspored informacija* (gornja traka: šest atributa s velikim modifikatorom i vrijednošću, proficiency, brzina, inspiracija, AC, inicijativa i HP okvir s Liječenje/iznos/Šteta i trenutni/maks./privremeni; ispod tri stupca: saving throwovi i pasivna osjetila, tablica vještina s oznakom proficiencyja, radni panel s karticama), uz **vlastiti vizualni sustav** (pergament/tinta/bronca/zvono, bez crvenih ukrasnih okvira i pozadinske ilustracije, vlastiti nazivi i oznake ●/○/◆). Na mobitelu je radni panel odmah ispod HP-a, a saveovi, osjetila i vještine slijede. Dodane su pasivna istraga i pasivni uvid (izvedene vrijednosti s objašnjenjem). E2E: 26/26 nakon promjene.

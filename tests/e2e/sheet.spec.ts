@@ -34,6 +34,7 @@ test("promjena atributa preračunava izvedene vrijednosti", async ({ page }, inf
   await dialog.getByRole("button", { name: "Spremi promjenu" }).click();
   await expectSaved(page, 1);
   await expect(page.getByTestId("ability-CHA-mod")).toHaveText("+3");
+  await tab(page, "Magija");
   await expect(page.getByTestId("spell-dc-value")).toHaveText("13");
   await expect(page.getByTestId("save-CHA-value")).toHaveText("+5");
 });
@@ -64,8 +65,7 @@ test("nevaljani unos se odbija bez upisa", async ({ page }, info) => {
   await page.locator("#hp-amount").fill("0");
   await page.getByRole("button", { name: "Šteta" }).click();
   await expect(page.getByTestId("hp-error")).toBeVisible();
-  await tab(page, "Pregled");
-  await page.getByRole("button", { name: "Promijeni Snaga" }).click();
+    await page.getByRole("button", { name: "Promijeni Snaga" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Nova vrijednost (1–30)").fill("31");
   await dialog.getByLabel(/Razlog/).fill("x");
@@ -167,7 +167,7 @@ test("ulazak u kartice i otvaranje objašnjenja ne šalju nijednu promjenu", asy
     if (r.method() !== "GET") posts.push(r.url());
   });
   await open(page, info, 10);
-  for (const name of ["Pregled", "Borba", "Oprema", "Magija", "Sposobnosti", "Bilješke", "Pregled"]) await tab(page, name);
+  for (const name of ["Borba", "Oprema", "Magija", "Sposobnosti", "Bilješke", "Borba"]) await tab(page, name);
   await page.getByTestId("save-WIS").locator("summary").click();
   await expect(page.getByTestId("save-WIS")).toContainText("Proficiency");
   expect(posts).toEqual([]);
@@ -214,7 +214,7 @@ test("tipkovnica: kartica, unos i radnja bez miša", async ({ page }, info) => {
 
 test("raspored: bez horizontalnog skrola; na mobitelu donja navigacija", async ({ page }, info) => {
   await open(page, info, 13);
-  for (const name of ["Pregled", "Borba", "Oprema", "Magija", "Sposobnosti", "Bilješke"]) {
+  for (const name of ["Borba", "Oprema", "Magija", "Sposobnosti", "Bilješke"]) {
     await tab(page, name);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `horizontalni skrol na kartici ${name}`).toBeLessThanOrEqual(0);
