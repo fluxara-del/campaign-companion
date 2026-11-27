@@ -15,7 +15,7 @@ import type {
 } from "@/domain/state";
 import type { Actor } from "./batch-service";
 import type { Db } from "./connection";
-import { loadState, visibilityClause } from "./state-repo";
+import { loadHiddenHolderRefs, loadState, visibilityClause } from "./state-repo";
 
 export type ItemNode = ItemState & { contents: ItemNode[] };
 
@@ -59,11 +59,14 @@ export function getCharacterSheet(db: Db, actor: Actor, campaignId: string, char
       const { stateVersion } = db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(campaignId) as { stateVersion: number };
 
       const items = Object.values(state.items);
+      // Vlasnik predmeta koji je DM-only NPC skriva se od ostalih uloga u odgovoru (baza ostaje nepromijenjena).
+      const hidden = member.role === "owner" ? new Set<string>() : loadHiddenHolderRefs(db, campaignId);
+      const visibleOwner = (ref: string | null) => (ref !== null && hidden.has(ref) ? null : ref);
       const tree = (parentId: string | null, holder: string | null): ItemNode[] =>
         items
           .filter((i) => (parentId ? i.containerItemId === parentId : i.containerItemId === null && i.holderRef === holder))
           .sort(byName)
-          .map((i) => ({ ...i, contents: tree(i.id, holder) }));
+          .map((i) => ({ ...i, ownerRef: visibleOwner(i.ownerRef), contents: tree(i.id, holder) }));
       const inventory = tree(null, characterId);
       const flatten = (nodes: ItemNode[]): ItemNode[] => nodes.flatMap((n) => [n, ...flatten(n.contents)]);
       const containers = flatten(inventory)

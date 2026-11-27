@@ -68,6 +68,12 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 | P2: zabilježena inicijativa gubi se kad DEX nije poznat | Zbroj se čuva kao override s razlogom i izvorom | „Zabilježena inicijativa uz nepoznat DEX”: `DEX: null` i izostavljen DEX → 2 |
 | SR-01: idempotencija batcha s javnim i DM zapisom | Bez promjene koda | „SR-01: ponovljeni batch …”: isti odgovor i ID-jevi, bez novih događaja, zapisa, poveznica i verzije |
 
+## Codex i supervisor na `dd09670`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: `inventory[].ownerRef` u sheetu otkriva ID DM-only NPC-a kada lik nosi njegov predmet | Read model za ulogu koja nije vlasnik vraća `ownerRef: null` kad je vlasnik DM-only NPC; vlasništvo u bazi se ne mijenja | „P1 (dd09670): inventar …”: izravno nošen predmet i predmet u spremniku; cijeli odgovor za igrača i promatrača bez ID-a i imena; DM vidi vlasnika; vidljive reference (lik, vidljivi NPC) ostaju; čitanje ne mijenja bazu. Kontrolna provjera: bez ispravka test pada |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):
