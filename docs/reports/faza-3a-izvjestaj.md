@@ -80,6 +80,15 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 |---|---|---|
 | P1: `savingThrows.CHA: null` ili `skills.Persuasion: null` uvozi se kao „bez proficiencyja” pa sheet prikazuje +2 | Polje prisutno u izvoru bez cijelog broja bilježi se kao izričito nepoznato (`Character.unknownTotalsJson`, nalaz `total_unknown`); izračun za taj cilj daje nepoznato (ručni override i dalje moguć). Nova nedestruktivna migracija `20261127170000_character_unknown_totals` (samo `ADD COLUMN` s defaultom `[]`). Baseline formata 2 bez novog polja čita se kao `[]` | „Izričito nepoznat zbroj …”: oba polja nepoznata nakon ponovnog učitavanja; kontrole: nenavedena vještina daje modifikator, poznati zbrojevi sačuvani. „baseline formata 2 bez polja unknownTotals …”: replay prolazi. Oba testa padaju bez ispravka |
 
+## Codex i supervisor na `e0454d0` / `b174d24`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: predmet DM-only NPC-a unutar vidljivog spremnika prikazuje se igraču s `holderRef` NPC-a | Read model za ulogu koja nije vlasnik izostavlja predmet skrivenog držatelja na svakoj razini stabla. Uvoz ne postavlja vezu predmeta na spremnik drugog držatelja (`container_holder_mismatch`, izvor sačuvan doslovno) | „P1 (e0454d0): predmet skrivenog NPC-a unutar vidljivog spremnika …”: igrač i promatrač bez skrivenog predmeta i ID-a, vidljivi sadržaj spremnika ostaje, DM vidi sve; uvoz: „predmet s drugim držateljem od spremnika …” |
+| P2: `Bless` i `bless` daju isti primarni ključ i ruše uvoz | Čarolije se spajaju po normaliziranom nazivu (oznake pripremljenosti se zbrajaju, `spell_name_merged`); značajke se ne spajaju nagađanjem nego dobivaju jedinstven stabilan ID (`-2`, `feature_id_collision`); isto pravilo štiti čarolije s istim ključem a različitim nazivom | „„Bless” i „bless” …”: jedna pripremljena čarolija, izvještaj zapisan; „dvije značajke s istim ključem …” |
+
+Kontrolna provjera: sva četiri nova testa padaju bez ispravka.
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):

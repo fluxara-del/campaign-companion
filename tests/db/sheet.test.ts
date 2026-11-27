@@ -493,6 +493,27 @@ describe("Codex nalazi na PR-u #16", () => {
     expect(sheet().derived.saves.WIS.value).not.toBeNull();
   });
 
+  it("P1 (e0454d0): predmet skrivenog NPC-a unutar vidljivog spremnika izostaje na svakoj razini", () => {
+    db.prepare(`INSERT INTO "Member" (campaignId, actorId, role, createdAt) VALUES (?, 'player', 'player', '2026-11-25T00:00:00Z')`).run(CID);
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    // Nedosljedni legacy zapis (domena ga ne može stvoriti): predmet NPC-a upisan u ruksak lika.
+    db.prepare(
+      `INSERT INTO "ItemInstance" (id, campaignId, name, quantity, ownerRef, holderRef, location, containerItemId, equipped, attributesJson, sourceRef) VALUES ('spy-note', ?, 'Šifrirana poruka', 1, 'NPC-TAJNI', 'NPC-TAJNI', NULL, 'pack', NULL, '{}', 't')`,
+    ).run(CID);
+    type N = { id: string; holderRef: string | null; contents: N[] };
+    const flat = (nodes: N[]): N[] => nodes.flatMap((n) => [n, ...flat(n.contents)]);
+    for (const actorId of ["player", "viewer"]) {
+      const sh = getCharacterSheet(db, { actorId }, CID, PC);
+      const json = JSON.stringify(sh);
+      expect(json).not.toMatch(/NPC-TAJNI|Tajni zlikovac|spy-note|Šifrirana/);
+      const pack = (sh.inventory as N[]).find((i) => i.id === "pack")!;
+      expect(pack.contents.map((c) => c.id).sort()).toEqual(["dagger", "pouch"]);
+      expect(flat(sh.inventory as N[]).map((i) => i.id)).toContain("coin");
+    }
+    const dmPack = (sheet().inventory as N[]).find((i) => i.id === "pack")!;
+    expect(dmPack.contents.map((c) => c.id).sort()).toEqual(["dagger", "pouch", "spy-note"]);
+  });
+
   it("P2: stari concentration save ne djeluje na novu koncentraciju (druga čarolija)", () => {
     run([cmd("ResolveCast", { spellSelectionId: "bless", cost: { kind: "slot", resourcePoolId: "slot1" } })]);
     run([cmd("ApplyDamage", { characterId: PC, amount: 4, damageType: null })]);

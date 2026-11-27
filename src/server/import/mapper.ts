@@ -23,6 +23,22 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const pad = (n: number) => String(n).padStart(3, "0");
+/**
+ * Stabilni jedinstveni ID-jevi: prvi zapis s danim ključem zadržava osnovni ID, sljedeći dobivaju -2, -3…
+ * (redom pojave u izvoru) i upozorenje, umjesto da dva zapisa dijele primarni ključ.
+ */
+function uniqueIds(names: string[], base: (n: string) => string, code: string, findings: Finding[]): string[] {
+  const seen = new Map<string, number>();
+  return names.map((n) => {
+    const b = base(n);
+    const k = (seen.get(b) ?? 0) + 1;
+    seen.set(b, k);
+    if (k === 1) return b;
+    findings.push({ code, severity: "warning", message: `Naziv „${n}” daje isti ključ kao raniji zapis; spremljen zasebno kao ${b}-${k}.` });
+    return `${b}-${k}`;
+  });
+}
+
 const kebab = (s: string) =>
   s
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
@@ -260,7 +276,15 @@ export function buildImportPlan(
     const candidates = items.filter((it) => it.name === containerName);
     const item = items.find((it) => it.sourceRef === `state/character.json#equipment[${i}]`);
     if (!item) return;
-    if (candidates.length === 1 && candidates[0]!.id !== item.id) {
+    if (candidates.length === 1 && candidates[0]!.id !== item.id && candidates[0]!.holderRef !== item.holderRef) {
+      // Predmet u spremniku mora imati istog držatelja kao spremnik; nedosljedna veza se ne postavlja.
+      findings.push({
+        code: "container_holder_mismatch",
+        severity: "warning",
+        message: `Predmet i spremnik „${containerName}” imaju različite držatelje; veza nije postavljena (izvor sačuvan doslovno).`,
+        source: item.sourceRef,
+      });
+    } else if (candidates.length === 1 && candidates[0]!.id !== item.id) {
       item.containerItemId = candidates[0]!.id;
     } else {
       findings.push({
@@ -445,24 +469,40 @@ export function buildImportPlan(
 
   // Čarolije i značajke: nazivi iz izvora, bez opisa (ADR-0005); razina i koncentracija nepoznate.
   const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-  const prepared = new Set(strList(character.preparedSpells));
-  const always = new Set(strList(character.alwaysPreparedSpells));
-  const spellNames = [...new Set([...strList(character.spells), ...prepared, ...always])];
-  const spells: SpellState[] = spellNames.map((name) => ({
-    id: `${pcId}:spell:${kebab(name)}`,
+  // Ista čarolija napisana različito (velika/mala slova, razmaci) spaja se u jedan zapis; oznake pripremljenosti se zbrajaju.
+  const norm = (s: string) => s.trim().replace(/s+/g, " ").toLowerCase();
+  const prepared = new Set(strList(character.preparedSpells).map(norm));
+  const always = new Set(strList(character.alwaysPreparedSpells).map(norm));
+  const spellByKey = new Map<string, string[]>();
+  for (const name of [...strList(character.spells), ...strList(character.preparedSpells), ...strList(character.alwaysPreparedSpells)]) {
+    const variants = spellByKey.get(norm(name)) ?? [];
+    if (!variants.includes(name)) variants.push(name);
+    spellByKey.set(norm(name), variants);
+  }
+  for (const [, variants] of spellByKey) {
+    if (variants.length > 1) {
+      findings.push({ code: "spell_name_merged", severity: "warning", message: `Čarolija navedena u više oblika (${variants.map((v) => `„${v}”`).join(", ")}); uvezena kao jedna, naziv „${variants[0]}”.` });
+    }
+  }
+  const spellIds = uniqueIds([...spellByKey.values()].map((v) => v[0]!), (n) => `${pcId}:spell:${kebab(n)}`, "spell_id_collision", findings);
+  const spells: SpellState[] = [...spellByKey.entries()].map(([key, variants], i) => ({
+    id: spellIds[i]!,
     characterId: pcId,
-    name,
+    name: variants[0]!,
     spellLevel: null,
     known: true,
-    prepared: prepared.has(name) || always.has(name),
-    alwaysPrepared: always.has(name),
+    prepared: prepared.has(key) || always.has(key),
+    alwaysPrepared: always.has(key),
     concentration: null,
   }));
   if (spells.length > 0) {
     findings.push({ code: "spell_details_unknown", severity: "info", message: `${spells.length} čarolija uvezeno bez razine i oznake koncentracije (nema kataloga); postavljaju se u sheetu.` });
   }
-  const features: FeatureState[] = [...new Set(strList(character.features))].map((name) => ({
-    id: `${pcId}:feature:${kebab(name)}`,
+  // Značajke se ne spajaju nagađanjem: različito napisani nazivi s istim ključem ostaju zasebni zapisi uz upozorenje.
+  const featureNames = [...new Set(strList(character.features))];
+  const featureIds = uniqueIds(featureNames, (n) => `${pcId}:feature:${kebab(n)}`, "feature_id_collision", findings);
+  const features: FeatureState[] = featureNames.map((name, i) => ({
+    id: featureIds[i]!,
     characterId: pcId,
     name,
     kind: null,
