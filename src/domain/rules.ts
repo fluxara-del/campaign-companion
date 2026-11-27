@@ -20,6 +20,11 @@ function violation(ctx: DecideContext, message: string, details: Record<string, 
   throw new DomainError("rule_violation", message, { commandIndex: ctx.commandIndex, ...details });
 }
 
+/** Držatelj je DM-only NPC kojeg uloga autora ne vidi: predmet kod njega ponaša se kao nepostojeći. */
+function hiddenFromActor(ctx: DecideContext, ref: string | null): boolean {
+  return ref !== null && ctx.hiddenHolderRefs.has(ref) && !ctx.knownHolderRefs.has(ref);
+}
+
 function ruling(ctx: DecideContext, message: string, details: Record<string, unknown> = {}): never {
   throw new DomainError("needs_ruling", message, { commandIndex: ctx.commandIndex, ...details });
 }
@@ -316,15 +321,14 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
       const { itemId, to } = command.payload;
       const it = getOwn(state.items, itemId);
       // Predmet kod NPC-a skrivenog od ove uloge ponaša se kao nepostojeći (ne otkriva držatelja).
-      const hiddenFromActor = (ref: string | null) => ref !== null && ctx.hiddenHolderRefs.has(ref) && !ctx.knownHolderRefs.has(ref);
-      if (!it || hiddenFromActor(it.holderRef)) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
+      if (!it || hiddenFromActor(ctx, it.holderRef)) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
       let after: ItemPlacement;
       if (to.kind === "holder") {
         if (!ctx.knownHolderRefs.has(to.holderRef)) violation(ctx, "Držatelj nije poznat lik ni NPC.", { holderRef: to.holderRef });
         after = { holderRef: to.holderRef, containerItemId: null, location: null, equipped: false };
       } else if (to.kind === "container") {
         const box = getOwn(state.items, to.containerItemId);
-        if (!box || hiddenFromActor(box.holderRef)) violation(ctx, "Spremnik ne postoji.", { containerItemId: to.containerItemId });
+        if (!box || hiddenFromActor(ctx, box.holderRef)) violation(ctx, "Spremnik ne postoji.", { containerItemId: to.containerItemId });
         // Spremnik ne smije biti sam predmet ni bilo što unutar njega (ciklus).
         for (let cur: string | null = box.id, guard = 0; cur; guard++) {
           if (cur === itemId || guard > 1000) violation(ctx, "Premještanje bi stvorilo ciklus spremnika.", { itemId, containerItemId: box.id });
@@ -360,13 +364,15 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
     case "SetEquipped": {
       const { itemId, equipped } = command.payload;
       const it = getOwn(state.items, itemId);
-      if (!it) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
+      if (!it || hiddenFromActor(ctx, it.holderRef)) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
       if (equipped) {
         if (!it.holderRef || !getOwn(state.characters, it.holderRef)) violation(ctx, "Opremiti se može samo predmet koji drži lik.");
         if (it.containerItemId) violation(ctx, "Predmet je u spremniku; najprije ga izvadi.", { containerItemId: it.containerItemId });
       }
       if (it.equipped === equipped) violation(ctx, equipped ? "Predmet je već opremljen." : "Predmet nije opremljen.");
-      return [{ ...mechanical, type: "ItemEquippedSet", payload: { itemId, name: it.name, before: it.equipped, after: equipped } }];
+      // Predmet kod DM-only NPC-a: promjenu (dopuštenu samo vlasniku) vidi samo DM.
+      const visibility = it.holderRef !== null && ctx.hiddenHolderRefs.has(it.holderRef) ? ("dm" as const) : mechanical.visibility;
+      return [{ ...mechanical, visibility, type: "ItemEquippedSet", payload: { itemId, name: it.name, before: it.equipped, after: equipped } }];
     }
 
     case "CompleteRest": {

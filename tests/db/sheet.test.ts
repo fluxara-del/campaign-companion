@@ -67,6 +67,7 @@ function setup(): CampaignSetup {
       { id: "dagger", name: "Bodež", quantity: 1, ownerRef: PC, holderRef: PC, location: null, containerItemId: "pack", equipped: false },
       { id: "pouch", name: "Torbica", quantity: 1, ownerRef: PC, holderRef: PC, location: null, containerItemId: "pack", equipped: null },
       { id: "coin", name: "Novčić", quantity: 1, ownerRef: PC, holderRef: PC, location: null, containerItemId: "pouch", equipped: null },
+      { id: "secret", name: "Tajni predmet", quantity: 1, ownerRef: "NPC-TAJNI", holderRef: "NPC-TAJNI", location: null, containerItemId: null, equipped: null },
     ],
   };
 }
@@ -377,6 +378,69 @@ describe("Codex nalazi na PR-u #16", () => {
       expect(loadVisibleJournal(db, CID, role).filter((j) => j.text.includes("NPC-1"))).toHaveLength(1);
       expect(leaks(role)).toEqual([]);
     }
+    expect(verifyReplay(db, CID).ok).toBe(true);
+  });
+
+  it("P2 (4649fbd): SetEquipped za predmet skrivenog NPC-a — igrač dobiva isti odgovor kao za nepostojeći; vlasnikova promjena samo DM-u", () => {
+    db.prepare(`INSERT INTO "Member" (campaignId, actorId, role, createdAt) VALUES (?, 'player', 'player', '2026-11-25T00:00:00Z')`).run(CID);
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    const snapshot = () => ({
+      version: (db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(CID) as { stateVersion: number }).stateVersion,
+      events: (db.prepare(`SELECT count(*) AS n FROM "DomainEvent" WHERE campaignId = ?`).get(CID) as { n: number }).n,
+      journal: (db.prepare(`SELECT count(*) AS n FROM "JournalEntry" WHERE campaignId = ?`).get(CID) as { n: number }).n,
+      item: state().items.secret,
+    });
+    const attempt = (itemId: string) => {
+      try {
+        run([cmd("SetEquipped", { itemId, equipped: false })], { actorId: "player" });
+      } catch (e) {
+        const err = e as DomainError;
+        return { code: err.code, message: err.message, details: { ...err.details, itemId: "X" } };
+      }
+      return null;
+    };
+    const before = snapshot();
+    const hidden = attempt("secret");
+    const missing = attempt("ne-postoji");
+    expect(hidden).not.toBeNull();
+    expect(hidden).toEqual(missing);
+    expect(JSON.stringify(hidden)).not.toMatch(/NPC-TAJNI|Tajni/);
+    expect(snapshot()).toEqual(before);
+    expect(before.item!.equipped).toBeNull();
+
+    // Vlasnik smije; događaj i zapis vidi samo DM.
+    run([cmd("SetEquipped", { itemId: "secret", equipped: false })]);
+    expect(state().items.secret!.equipped).toBe(false);
+    const ev = db.prepare(`SELECT visibility FROM "DomainEvent" WHERE campaignId = ? AND type = 'ItemEquippedSet'`).all(CID) as { visibility: string }[];
+    expect(ev).toEqual([{ visibility: "dm" }]);
+    for (const role of ["player", "viewer"]) expect(JSON.stringify(loadVisibleJournal(db, CID, role))).not.toMatch(/Tajni/);
+    expect(loadVisibleJournal(db, CID, "owner").some((j) => j.visibility === "dm" && j.text.includes("Tajni predmet"))).toBe(true);
+    expect(verifyReplay(db, CID).ok).toBe(true);
+  });
+
+  it("SR-01: ponovljeni batch s javnim i DM zapisom vraća iste ID-jeve bez novih događaja, zapisa i verzije", () => {
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    const batch = {
+      schemaVersion: 1 as const,
+      batchId: randomUUID(),
+      campaignId: CID,
+      expectedStateVersion: version,
+      commands: [
+        cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: "NPC-TAJNI" } }),
+        cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null }),
+      ],
+    };
+    const count = (t: string) => (db.prepare(`SELECT count(*) AS n FROM "${t}" WHERE campaignId = ?`).get(CID) as { n: number }).n;
+    const first = executeBatch(db, OWNER, batch);
+    expect(first.replayed).toBe(false);
+    expect(first.journalEntryIds).toHaveLength(2);
+    const vis = db.prepare(`SELECT id, visibility FROM "JournalEntry" WHERE batchId = ? ORDER BY id`).all(batch.batchId) as { id: string; visibility: string }[];
+    expect(vis.map((v) => v.visibility).sort()).toEqual(["dm", "player"]);
+    const after = { events: count("DomainEvent"), journal: count("JournalEntry"), links: count("JournalEventLink"), version: first.stateVersionAfter };
+    const again = executeBatch(db, OWNER, batch);
+    expect(again.replayed).toBe(true);
+    expect({ ...again, replayed: false }).toEqual(first);
+    expect({ events: count("DomainEvent"), journal: count("JournalEntry"), links: count("JournalEventLink"), version: (db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(CID) as { stateVersion: number }).stateVersion }).toEqual(after);
     expect(verifyReplay(db, CID).ok).toBe(true);
   });
 
