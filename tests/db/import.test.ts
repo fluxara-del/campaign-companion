@@ -592,6 +592,14 @@ describe("Uvezeni zbrojevi ostaju jednaki zabilježenima (Codex P2 na 0682a58)",
       c.level = null;
       c.proficiencyBonus = 2;
     }],
+    // Codex P2 na 31fc1ab: bez razine i bez bonusa; napad bez DC-a.
+    ["nepoznata razina i bez proficiency bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+    }],
+    ["zabilježen napad bez spell DC-a", (c) => {
+      delete c.spellSaveDC;
+    }],
   ];
   it.each(variants)("%s: saveovi, vještine, spell DC i napad u sheetu = zabilježeni", async (_l, mutate) => {
     const r = run(
@@ -615,7 +623,7 @@ describe("Uvezeni zbrojevi ostaju jednaki zabilježenima (Codex P2 na 0682a58)",
     for (const [skill, total] of Object.entries(src.skills as Record<string, number>)) {
       expect(d.skills[skill]!.value, `skill ${skill}`).toBe(total);
     }
-    expect(d.spellSaveDc.value).toBe(src.spellSaveDC);
+    if (src.spellSaveDC !== undefined) expect(d.spellSaveDc.value).toBe(src.spellSaveDC);
     expect(d.spellAttack.value).toBe(src.spellAttackBonus);
   }, 60_000);
 });
