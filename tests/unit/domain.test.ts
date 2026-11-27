@@ -7,13 +7,30 @@ import { applyEvent, ReplayDivergenceError } from "@/domain/reducer";
 import { decide } from "@/domain/rules";
 import type { CampaignState } from "@/domain/state";
 
-const ctx = { commandIndex: 0, newId: () => "id-1" };
+const ctx = { commandIndex: 0, newId: () => "id-1", knownHolderRefs: new Set(["PC"]), hiddenHolderRefs: new Set<string>() };
 const intentRef = { kind: "player_choice", messageId: "m1" } as const;
 
 function state(): CampaignState {
   return {
     campaignId: "C",
-    characters: { PC: { id: "PC", name: "Lik", hpCurrent: 10, hpMax: 12, hpTemp: 3 } },
+    format: 2,
+    characters: {
+      PC: {
+        id: "PC",
+        name: "Lik",
+        hpCurrent: 10,
+        hpMax: 12,
+        hpTemp: 3,
+        level: 2,
+        speedFt: 30,
+        acBase: 18,
+        spellcastingAbility: "CHA",
+        abilities: { STR: 16, DEX: 10, CON: 14, INT: 8, WIS: 12, CHA: 14 },
+        saveProficiencies: ["CHA", "WIS"],
+        skillProficiencies: { Athletics: "proficient" },
+        unknownTotals: [],
+      },
+    },
     resourcePools: {
       slot: { id: "slot", characterId: "PC", resourceKey: "slot", current: 1, max: 2, rechargePolicy: "long_rest" },
       unk: { id: "unk", characterId: "PC", resourceKey: "unk", current: null, max: null, rechargePolicy: null },
@@ -21,6 +38,13 @@ function state(): CampaignState {
     wallets: {
       w: { id: "w", ownerCharacterId: "PC", purpose: "personal", label: "O", currency: "cp", amountMinor: 50 },
     },
+    modifiers: {},
+    spells: {},
+    features: {},
+    conditions: {},
+    concentration: {},
+    rollRequests: {},
+    items: {},
   };
 }
 
@@ -145,5 +169,27 @@ describe("reducer", () => {
     expect(() =>
       applyEvent(s, { type: "ResourceConsumed", payload: { resourcePoolId: "slot", characterId: "PC", amount: 1, before: 2, after: 1 } }),
     ).toThrow(ReplayDivergenceError);
+  });
+});
+
+describe("izvedene vrijednosti (2024)", () => {
+  it("proficiency po razini i modifikator atributa", async () => {
+    const { proficiencyBonusForLevel, abilityModifier } = await import("@/domain/derived");
+    expect([1, 4, 5, 8, 9, 12, 13, 16, 17, 20].map(proficiencyBonusForLevel)).toEqual([2, 2, 3, 3, 4, 4, 5, 5, 6, 6]);
+    expect([1, 8, 9, 10, 11, 20, 30].map(abilityModifier)).toEqual([-5, -1, -1, 0, 0, 5, 10]);
+  });
+
+  it("expertise udvostručuje PB; nepoznat atribut daje null s razlogom, ne 0", async () => {
+    const { deriveSheet } = await import("@/domain/derived");
+    const s = state();
+    s.characters.PC!.skillProficiencies = { Persuasion: "expertise" };
+    s.characters.PC!.abilities.WIS = null;
+    const d = deriveSheet(s, "PC")!;
+    expect(d.skills.Persuasion!.value).toBe(2 + 4);
+    expect(d.skills.Perception!.value).toBeNull();
+    expect(d.skills.Perception!.unknownBecause).toMatch(/WIS/);
+    expect(d.passivePerception.value).toBeNull();
+    s.characters.PC!.level = null;
+    expect(deriveSheet(s, "PC")!.spellSaveDc.value).toBeNull();
   });
 });

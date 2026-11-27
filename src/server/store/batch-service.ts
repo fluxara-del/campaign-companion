@@ -8,7 +8,7 @@ import { applyEvent } from "@/domain/reducer";
 import { decide } from "@/domain/rules";
 import { cloneState } from "@/domain/state";
 import { isBusyError, isUniqueViolation, type Db } from "./connection";
-import { loadState, persistChanges } from "./state-repo";
+import { loadHiddenHolderRefs, loadKnownHolderRefs, loadState, persistChanges } from "./state-repo";
 
 export type Actor = { actorId: string };
 
@@ -108,10 +108,12 @@ function runInTransaction(
 
   // 5) Pravila redom naredbi; svaka naredba vidi stanje nakon prethodnih.
   const before = loadState(db, campaignId);
+  const knownHolderRefs = loadKnownHolderRefs(db, campaignId, role);
+  const hiddenHolderRefs = loadHiddenHolderRefs(db, campaignId);
   const working = cloneState(before);
   const drafts: { commandId: string; draft: EventDraft }[] = [];
   batch.commands.forEach((command, commandIndex) => {
-    for (const draft of decide(working, command, { commandIndex, newId: opts.newId })) {
+    for (const draft of decide(working, command, { commandIndex, newId: opts.newId, knownHolderRefs, hiddenHolderRefs })) {
       applyEvent(working, draft);
       drafts.push({ commandId: command.commandId, draft });
     }
@@ -130,8 +132,17 @@ function runInTransaction(
 
   const journalEntryIds: string[] = [];
   const mechanical = events.filter((e) => e.draft.type !== "JournalNoteAppended");
-  const projectionId = mechanical.length > 0 ? opts.newId() : null;
-  if (projectionId) journalEntryIds.push(projectionId);
+  // Jedna projekcija po vidljivosti: DM-only događaji (npr. transfer skrivenom NPC-u) ne ulaze u unos koji vide igrači.
+  const projections: { id: string; visibility: EventDraft["visibility"]; events: typeof mechanical }[] = [];
+  for (const e of mechanical) {
+    let p = projections.find((x) => x.visibility === e.draft.visibility);
+    if (!p) {
+      p = { id: opts.newId(), visibility: e.draft.visibility, events: [] };
+      projections.push(p);
+      journalEntryIds.push(p.id);
+    }
+    p.events.push(e);
+  }
   for (const e of events) {
     if (e.draft.type === "JournalNoteAppended") journalEntryIds.push(e.draft.payload.journalEntryId);
   }
@@ -196,18 +207,9 @@ function runInTransaction(
      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
   );
   const insLink = db.prepare(`INSERT INTO "JournalEventLink" (campaignId, journalEntryId, eventId) VALUES (?, ?, ?)`);
-  if (projectionId) {
-    insJournal.run(
-      projectionId,
-      campaignId,
-      batchId,
-      "projection",
-      null,
-      mechanical.map((e) => describeEvent(e.draft)).join("\n"),
-      "player",
-      committedAt,
-    );
-    for (const e of mechanical) insLink.run(campaignId, projectionId, e.id);
+  for (const p of projections) {
+    insJournal.run(p.id, campaignId, batchId, "projection", null, p.events.map((e) => describeEvent(e.draft)).join("\n"), p.visibility, committedAt);
+    for (const e of p.events) insLink.run(campaignId, p.id, e.id);
   }
   for (const e of events) {
     if (e.draft.type !== "JournalNoteAppended") continue;

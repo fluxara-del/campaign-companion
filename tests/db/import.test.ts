@@ -555,3 +555,301 @@ describe("Spell slotovi s nepoznatim vrijednostima (Codex P2)", () => {
     expect(r.report.findings.some((f) => f.code === "resource_value" && f.source === "state/character.json#resources.spellSlots.1.current")).toBe(true);
   }, 60_000);
 });
+
+describe("Faza 3: uvoz trajnih podataka lika", () => {
+  it("atributi, proficiency iz zabilježenih zbrojeva, inicijativa kao bonus, čarolije i značajke", () => {
+    const r = run(makeSource());
+    expect(r.report.status).toBe("trial");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const pc = db.prepare(`SELECT level, acBase, speedFt, spellcastingAbility, abStr, abCha, saveProficienciesJson, skillProficienciesJson FROM "Character" WHERE id = 'PC-001'`).get() as Record<string, unknown>;
+    expect(pc).toMatchObject({ level: 2, acBase: 18, speedFt: 30, spellcastingAbility: "CHA", abStr: 16, abCha: 14 });
+    expect(JSON.parse(pc.saveProficienciesJson as string)).toEqual(["CHA", "WIS"]);
+    // Insight 9 ne odgovara izračunu (WIS +1, PB 2) → override s razlogom, ne izmišljena proficiency.
+    expect(JSON.parse(pc.skillProficienciesJson as string)).toEqual({ Athletics: "proficient", Perception: "proficient", Persuasion: "proficient" });
+    const mods = db.prepare(`SELECT target, kind, value FROM "StatModifier" ORDER BY target`).all();
+    expect(mods).toEqual([
+      { target: "initiative", kind: "bonus", value: 2 },
+      { target: "skill:Insight", kind: "override", value: 9 },
+    ]);
+    const spells = db.prepare(`SELECT name, prepared, alwaysPrepared, spellLevel, concentration FROM "SpellSelection" ORDER BY name`).all();
+    expect(spells).toEqual([
+      { name: "Bless", prepared: 1, alwaysPrepared: 0, spellLevel: null, concentration: null },
+      { name: "Divine Smite", prepared: 1, alwaysPrepared: 1, spellLevel: null, concentration: null },
+    ]);
+    expect((db.prepare(`SELECT COUNT(*) AS n FROM "FeatureInstance"`).get() as { n: number }).n).toBe(2);
+    db.close();
+    expect(r.report.findings.some((f) => f.code === "imported_override" && f.source?.includes("Insight"))).toBe(true);
+    expect(r.report.findings.some((f) => f.code === "spellcasting_inferred")).toBe(true);
+  }, 60_000);
+});
+
+describe("Uvezeni zbrojevi ostaju jednaki zabilježenima (Codex P2 na 0682a58)", () => {
+  const variants: [string, (c: Record<string, unknown>) => void][] = [
+    ["izvorni podaci", () => {}],
+    ["nepoznata razina", (c) => (c.level = null)],
+    ["zabilježeni proficiency bonus 3 uz razinu 2", (c) => (c.proficiencyBonus = 3)],
+    ["nepoznata razina i zabilježeni bonus 2", (c) => {
+      c.level = null;
+      c.proficiencyBonus = 2;
+    }],
+    // Codex P2 na 31fc1ab: bez razine i bez bonusa; napad bez DC-a.
+    ["nepoznata razina i bez proficiency bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+    }],
+    ["zabilježen napad bez spell DC-a", (c) => {
+      delete c.spellSaveDC;
+    }],
+  ];
+  it.each(variants)("%s: saveovi, vještine, spell DC i napad u sheetu = zabilježeni", async (_l, mutate) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const d = deriveSheet(loadState(db, "UZR-001"), "PC-001")!;
+    db.close();
+    const src = JSON.parse(readFileSync(path.join(r.generationDir, "source", "state", "character.json"), "utf8"));
+    for (const [a, total] of Object.entries(src.savingThrows as Record<string, number>)) {
+      expect(d.saves[a as "STR"].value, `save ${a}`).toBe(total);
+    }
+    for (const [skill, total] of Object.entries(src.skills as Record<string, number>)) {
+      expect(d.skills[skill]!.value, `skill ${skill}`).toBe(total);
+    }
+    expect(d.spellSaveDc.value).toBe(src.spellSaveDC ?? null);
+    expect(d.spellAttack.value).toBe(src.spellAttackBonus ?? null);
+  }, 60_000);
+});
+
+describe("Pojedinačno zabilježen spell DC ili napad (supervisor na 20e7c6a)", () => {
+  const cases: [string, (c: Record<string, unknown>) => void, number | null, number | null][] = [
+    ["samo DC, bez razine i bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+      delete c.spellAttackBonus;
+    }, 12, null],
+    ["samo napad, bez razine i bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+      delete c.spellSaveDC;
+    }, null, 4],
+    ["samo napad, uz poznat bonus", (c) => {
+      delete c.spellSaveDC;
+    }, null, 4],
+  ];
+  it.each(cases)("%s: zabilježeni zbroj sačuvan, drugi ostaje nepoznat", async (_l, mutate, dc, atk) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const st = loadState(db, "UZR-001");
+    db.close();
+    const d = deriveSheet(st, "PC-001")!;
+    expect(st.characters["PC-001"]!.spellcastingAbility).toBeNull();
+    expect(d.spellSaveDc.value).toBe(dc);
+    expect(d.spellAttack.value).toBe(atk);
+    // Sačuvana vrijednost je override s razlogom i izvorom, a ne izračun.
+    const kept = dc !== null ? d.spellSaveDc : d.spellAttack;
+    expect(kept.override?.reason).toMatch(/atribut čaranja nije moguće izvesti/);
+    expect(kept.override?.source).toBeTruthy();
+    expect((dc !== null ? d.spellAttack : d.spellSaveDc).override).toBeFalsy();
+    expect(r.report.findings.some((f) => f.code === "spellcasting_unknown")).toBe(true);
+  }, 60_000);
+});
+
+describe("Zabilježena inicijativa uz nepoznat DEX (Codex P2 na 20e7c6a)", () => {
+  const cases: [string, (c: Record<string, unknown>) => void][] = [
+    ["DEX: null", (c) => ((c.abilityScores as Record<string, unknown>).DEX = null)],
+    ["DEX izostavljen", (c) => delete (c.abilityScores as Record<string, unknown>).DEX],
+  ];
+  it.each(cases)("%s: inicijativa nakon uvoza i ponovnog učitavanja = 2, kao override s razlogom", async (_l, mutate) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const d = deriveSheet(loadState(db, "UZR-001"), "PC-001")!;
+    db.close();
+    expect(d.initiative.value).toBe(2);
+    expect(d.initiative.override?.reason).toMatch(/DEX nije poznat/);
+    expect(d.initiative.override?.source).toBeTruthy();
+  }, 60_000);
+});
+
+describe("Izričito nepoznat zbroj u izvoru ostaje nepoznat (Codex P1 na 5513d9a)", () => {
+  it("savingThrows.CHA: null i skills.Persuasion: null uz poznat CHA → nepoznato nakon ponovnog učitavanja", async () => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        c.savingThrows.CHA = null;
+        c.skills.Persuasion = null;
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const st = loadState(db, "UZR-001");
+    const stored = db.prepare(`SELECT unknownTotalsJson FROM "Character" WHERE id = 'PC-001'`).get() as { unknownTotalsJson: string };
+    db.close();
+    expect(JSON.parse(stored.unknownTotalsJson)).toEqual(["save:CHA", "skill:Persuasion"]);
+    const d = deriveSheet(st, "PC-001")!;
+    expect(st.characters["PC-001"]!.abilities.CHA).toBe(14);
+    expect(d.saves.CHA.value).toBeNull();
+    expect(d.saves.CHA.unknownBecause).toMatch(/izričito/);
+    expect(d.skills.Persuasion!.value).toBeNull();
+    expect(d.skills.Persuasion!.unknownBecause).toMatch(/izričito/);
+    // Kontrola: vještina koju izvor ne navodi (poznat izostanak proficiencyja) daje modifikator atributa.
+    expect(d.skills.Deception!.value).toBe(2);
+    // Kontrola: poznati zbrojevi ostaju jednaki zabilježenima.
+    expect(d.saves.WIS.value).toBe(3);
+    expect(d.saves.STR.value).toBe(3);
+    expect(r.report.findings.filter((f) => f.code === "total_unknown")).toHaveLength(2);
+  }, 60_000);
+});
+
+describe("Postupak za ranije uvezene likove: ponovni probni uvoz iz izvora (SR-02, e0454d0)", () => {
+  it("nova generacija iz istog izvora dobiva oznake nepoznatog; prethodna generacija i izvor ostaju netaknuti", async () => {
+    const source = makeSource((d) => {
+      const f = path.join(d, "state", "character.json");
+      const c = JSON.parse(readFileSync(f, "utf8"));
+      c.savingThrows.CHA = null;
+      c.skills.Persuasion = null;
+      writeFileSync(f, JSON.stringify(c));
+    });
+    const sourceBefore = hashTree(source);
+    const first = run(source, "gen-ranija");
+    const firstBefore = hashTree(first.generationDir);
+    const second = run(source, "gen-nova");
+    expect(second.generationDir).not.toBe(first.generationDir);
+    expect(hashTree(first.generationDir)).toEqual(firstBefore);
+    expect(hashTree(source)).toEqual(sourceBefore);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(second.dbPath!, { readonly: true });
+    expect(loadState(db, "UZR-001").characters["PC-001"]!.unknownTotals).toEqual(["save:CHA", "skill:Persuasion"]);
+    db.close();
+  }, 120_000);
+});
+
+describe("Kolizije ključeva i nedosljedni spremnici (Codex na e0454d0)", () => {
+  const mutated = (mutate: (c: Record<string, unknown>) => void) =>
+    run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+
+  it("„Bless” i „bless” daju jednu pripremljenu čaroliju; uvoz i izvještaj završavaju", async () => {
+    const r = mutated((c) => {
+      c.spells = ["Bless"];
+      c.preparedSpells = ["bless"];
+    });
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const spells = Object.values(loadState(db, "UZR-001").spells).filter((s) => s.name.toLowerCase() === "bless");
+    db.close();
+    expect(spells).toEqual([expect.objectContaining({ id: "PC-001:spell:bless", name: "Bless", prepared: true, alwaysPrepared: false })]);
+    expect(r.report.findings.some((f) => f.code === "spell_name_merged")).toBe(true);
+  }, 60_000);
+
+  it.each([
+    ["Bless / BLESS", { spells: ["Bless"], preparedSpells: ["BLESS"], alwaysPreparedSpells: [] }, "Bless", true, false],
+    ["višerječni naziv s višestrukim razmacima (alwaysPrepared)", { spells: ["Divine Smite"], preparedSpells: [], alwaysPreparedSpells: ["divine   SMITE"] }, "Divine Smite", true, true],
+  ] as const)("%s: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane", async (_l, lists, name, prep, always) => {
+    const r = mutated((c) => Object.assign(c, lists));
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const all = Object.values(loadState(db, "UZR-001").spells);
+    db.close();
+    const key = name.toLowerCase();
+    const matching = all.filter((sp) => sp.name.toLowerCase().replace(/\s+/g, " ") === key);
+    expect(matching).toEqual([expect.objectContaining({ name, prepared: prep, alwaysPrepared: always })]);
+    expect(all).toHaveLength(1);
+  }, 60_000);
+
+  const trio = [
+    ["Bless!", "Bless?", "Bless-2"],
+    ["Bless-2", "Bless!", "Bless?"],
+  ];
+  it.each(trio)("čarolije %s, %s, %s: tri zapisa s različitim ID-jevima, izvještaj zapisan", async (...names) => {
+    const r = mutated((c) => Object.assign(c, { spells: names, preparedSpells: [], alwaysPreparedSpells: [] }));
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const spells = Object.values(loadState(db, "UZR-001").spells);
+    db.close();
+    expect(spells.map((s) => s.name).sort()).toEqual([...names].sort());
+    expect(new Set(spells.map((s) => s.id)).size).toBe(3);
+  }, 60_000);
+  it.each(trio)("značajke %s, %s, %s: tri zapisa s različitim ID-jevima, izvještaj zapisan", async (...names) => {
+    const r = mutated((c) => Object.assign(c, { features: names }));
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const features = Object.values(loadState(db, "UZR-001").features);
+    db.close();
+    expect(features.map((f) => f.name).sort()).toEqual([...names].sort());
+    expect(new Set(features.map((f) => f.id)).size).toBe(3);
+  }, 60_000);
+
+  it("dvije značajke s istim ključem ostaju zasebne, uz upozorenje", async () => {
+    const r = mutated((c) => {
+      c.features = ["Divine Sense", "divine sense"];
+    });
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const features = Object.values(loadState(db, "UZR-001").features).map((f) => [f.id, f.name]).sort();
+    db.close();
+    expect(features).toEqual([
+      ["PC-001:feature:divine-sense", "Divine Sense"],
+      ["PC-001:feature:divine-sense-2", "divine sense"],
+    ]);
+    expect(r.report.findings.filter((f) => f.code === "feature_id_collision")).toHaveLength(1);
+  }, 60_000);
+
+  it("predmet s drugim držateljem od spremnika ne dobiva vezu na spremnik", async () => {
+    const r = mutated((c) => {
+      (c.equipment as Record<string, unknown>[])[2]!.holderId = "NPC-001";
+    });
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const plocica = Object.values(loadState(db, "UZR-001").items).find((i) => i.name === "Pločica")!;
+    db.close();
+    expect(plocica).toMatchObject({ holderRef: "NPC-001", containerItemId: null });
+    expect(r.report.findings.some((f) => f.code === "container_holder_mismatch")).toBe(true);
+  }, 60_000);
+});

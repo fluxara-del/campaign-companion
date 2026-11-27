@@ -6,29 +6,117 @@
   "hp": 18,
   "maxHp": 22,
   "temporaryHp": 0,
-  "abilityScores": { "STR": 16, "DEX": 10, "CON": 14, "INT": 8, "WIS": 12, "CHA": 14 },
-  "spells": ["Bless"],
+  "abilityScores": {
+    "STR": 16,
+    "DEX": 10,
+    "CON": 13,
+    "INT": 8,
+    "WIS": 12,
+    "CHA": 14
+  },
+  "spells": [
+    "Bless"
+  ],
   "equipment": [
-    { "name": "Mač", "quantity": 1 },
-    { "name": "Probni amulet", "quantity": 1, "ownerId": "PC-001", "state": "Pretinac otvoren" },
-    { "name": "Pločica", "quantity": 1, "ownerId": "PC-001", "container": "Probni amulet" },
-    { "name": "Napitak", "quantity": 1, "ownerId": "PC-001", "used": false }
+    {
+      "name": "Mač",
+      "quantity": 1
+    },
+    {
+      "name": "Probni amulet",
+      "quantity": 1,
+      "ownerId": "PC-001",
+      "state": "Pretinac otvoren"
+    },
+    {
+      "name": "Pločica",
+      "quantity": 1,
+      "ownerId": "PC-001",
+      "container": "Probni amulet"
+    },
+    {
+      "name": "Napitak",
+      "quantity": 1,
+      "ownerId": "PC-001",
+      "used": false
+    }
   ],
   "externalItems": [
-    { "name": "Tuđi kolut", "ownerId": "NPC-001", "custody": null, "ownershipTransferred": false },
-    { "name": "Klin", "location": "Ležište ispod kule", "inInventory": false }
+    {
+      "name": "Tuđi kolut",
+      "ownerId": "NPC-001",
+      "custody": null,
+      "ownershipTransferred": false
+    },
+    {
+      "name": "Klin",
+      "location": "Ležište ispod kule",
+      "inInventory": false
+    }
   ],
-  "currency": { "gp": 21 },
+  "currency": {
+    "gp": 21
+  },
   "resources": {
-    "layOnHands": { "current": 10, "max": 10 },
-    "spellSlots": { "1": { "current": 0, "max": 2 } },
-    "freeDivineSmite": { "current": 0, "max": 1, "recharge": "long_rest" },
-    "hitDice": { "current": 2, "max": 2, "die": "d10" },
+    "layOnHands": {
+      "current": 10,
+      "max": 10
+    },
+    "spellSlots": {
+      "1": {
+        "current": 0,
+        "max": 2
+      }
+    },
+    "freeDivineSmite": {
+      "current": 0,
+      "max": 1,
+      "recharge": "long_rest"
+    },
+    "hitDice": {
+      "current": 2,
+      "max": 2,
+      "die": "d10"
+    },
     "heroicInspiration": null
   },
   "lastLongRestSinceAdventureStart": false,
-  "backstoryEventIds": ["UZR-S000-E001"],
+  "backstoryEventIds": [
+    "UZR-S000-E001"
+  ],
   "resourceUseMarkdown": "| Karakteristika | Stanje |\n|---|---|\n| HP | 18/22 |\n| Spell Slots, razina 1 | 0/2 |\n| Lay on Hands | 10/10 |\n| Besplatni Divine Smite | 0/1 |",
   "characterSheetMarkdown": "| Polje | Vrijednost |\n|---|---|\n| Spell Slots, 1. krug | 2/2 |\n\n**Novac:** 21 GP.",
-  "inventoryNotesMarkdown": "- Osobni novac: 21 GP.\n- Sredstva za istragu: 5 GP."
+  "inventoryNotesMarkdown": "- Osobni novac: 21 GP.\n- Sredstva za istragu: 5 GP.",
+  "ac": 18,
+  "speedFt": 30,
+  "initiative": 2,
+  "proficiencyBonus": 2,
+  "savingThrows": {
+    "STR": 3,
+    "DEX": 0,
+    "CON": 1,
+    "INT": -1,
+    "WIS": 3,
+    "CHA": 4
+  },
+  "skills": {
+    "Athletics": 5,
+    "Perception": 3,
+    "Persuasion": 4,
+    "Insight": 9
+  },
+  "spellSaveDC": 12,
+  "spellAttackBonus": 4,
+  "preparedSpells": [
+    "Bless"
+  ],
+  "alwaysPreparedSpells": [
+    "Divine Smite"
+  ],
+  "features": [
+    "Alert",
+    "Lay on Hands"
+  ],
+  "conditions": [],
+  "concentration": null
 }

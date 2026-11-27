@@ -1,6 +1,18 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { ResourcePoolState, WalletState } from "@/domain/state";
+import { abilityModifier, proficiencyBonusForLevel, SKILLS } from "@/domain/derived";
+import { getOwn } from "@/domain/records";
+import {
+  ABILITIES,
+  emptyAbilities,
+  type Ability,
+  type ConditionState,
+  type FeatureState,
+  type ResourcePoolState,
+  type SpellState,
+  type StatModifierState,
+  type WalletState,
+} from "@/domain/state";
 import { sha256 } from "./source-snapshot";
 import type { DocumentRow, EntityRow, Finding, ImportPlan, ItemRow, LegacyEventRow, SourceManifest } from "./types";
 
@@ -11,6 +23,23 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const pad = (n: number) => String(n).padStart(3, "0");
+/**
+ * Stabilni jedinstveni ID-jevi: zapis dobiva osnovni ID ako je slobodan, inače prvi slobodni -2, -3…
+ * (redom pojave u izvoru) i upozorenje. Provjerava se skup svih već dodijeljenih konačnih ID-jeva,
+ * pa ni naziv koji sam završava na „-2” ne može dobiti zauzeti ID.
+ */
+function uniqueIds(names: string[], base: (n: string) => string, code: string, findings: Finding[]): string[] {
+  const assigned = new Set<string>();
+  return names.map((n) => {
+    const b = base(n);
+    let id = b;
+    for (let k = 2; assigned.has(id); k++) id = `${b}-${k}`;
+    assigned.add(id);
+    if (id !== b) findings.push({ code, severity: "warning", message: `Naziv „${n}” daje već zauzet ključ; spremljen zasebno kao ${id}.` });
+    return id;
+  });
+}
+
 const kebab = (s: string) =>
   s
     .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
@@ -248,7 +277,15 @@ export function buildImportPlan(
     const candidates = items.filter((it) => it.name === containerName);
     const item = items.find((it) => it.sourceRef === `state/character.json#equipment[${i}]`);
     if (!item) return;
-    if (candidates.length === 1 && candidates[0]!.id !== item.id) {
+    if (candidates.length === 1 && candidates[0]!.id !== item.id && candidates[0]!.holderRef !== item.holderRef) {
+      // Predmet u spremniku mora imati istog držatelja kao spremnik; nedosljedna veza se ne postavlja.
+      findings.push({
+        code: "container_holder_mismatch",
+        severity: "warning",
+        message: `Predmet i spremnik „${containerName}” imaju različite držatelje; veza nije postavljena (izvor sačuvan doslovno).`,
+        source: item.sourceRef,
+      });
+    } else if (candidates.length === 1 && candidates[0]!.id !== item.id) {
       item.containerItemId = candidates[0]!.id;
     } else {
       findings.push({
@@ -292,7 +329,199 @@ export function buildImportPlan(
     mapping[src] = id;
   });
 
-  // --- Profil lika: sve što Faza 1 još ne modelira, sačuvano doslovno.
+  // --- Faza 3: trajni podaci lika. Proficiency se izvodi iz zabilježenih zbrojeva samo kad je
+  // razlika točno 0, PB ili 2×PB; inače se zabilježena vrijednost čuva kao override s razlogom.
+  const abilities = emptyAbilities();
+  const scores = isObj(character.abilityScores) ? character.abilityScores : {};
+  for (const a of ABILITIES) {
+    const v = scores[a];
+    if (v === undefined || v === null) continue;
+    const n = int(v);
+    if (n === null || n < 1 || n > 30) findings.push({ code: "ability_value", severity: "error", message: `Atribut ${a} nije cijeli broj 1–30.`, source: `state/character.json#abilityScores.${a}` });
+    else abilities[a] = n;
+  }
+  const level = character.level === undefined || character.level === null ? null : int(character.level);
+  if (character.level !== undefined && character.level !== null && (level === null || level < 1 || level > 20)) {
+    findings.push({ code: "level_value", severity: "error", message: "Razina nije cijeli broj 1–20.", source: "state/character.json#level" });
+  }
+  const levelPb = level !== null && level >= 1 && level <= 20 ? proficiencyBonusForLevel(level) : null;
+  const recordedPb = int(character.proficiencyBonus);
+  /** Bonus kojim se izvode proficiencyji: zabilježeni ima prednost pred izračunom po razini. */
+  const pb = recordedPb ?? levelPb;
+  const mod = (a: Ability) => (abilities[a] === null ? null : abilityModifier(abilities[a]!));
+  const modifiers: StatModifierState[] = [];
+  const importedOverride = (target: string, value: number, reason: string, src: string) => {
+    modifiers.push({ id: `${pcId}:override:${target}`, characterId: pcId, target, kind: "override", value, source: "Uvezena vrijednost", reason });
+    findings.push({ code: "imported_override", severity: "warning", message: `${target}: zabilježeno ${value} ne odgovara izračunu; sačuvano kao override s razlogom.`, source: src });
+  };
+
+  // Polje prisutno u izvoru, ali bez cijelog broja (npr. null): zbroj je izričito nepoznat, ne „bez proficiencyja”.
+  const unknownTotals: string[] = [];
+  const explicitUnknown = (target: string, src: string) => {
+    unknownTotals.push(target);
+    findings.push({ code: "total_unknown", severity: "warning", message: `${target}: izvor navodi nepoznatu vrijednost; ostaje nepoznato u sheetu.`, source: src });
+  };
+
+  const saveProficiencies: Ability[] = [];
+  const saves = isObj(character.savingThrows) ? character.savingThrows : {};
+  for (const a of ABILITIES) {
+    const total = int(saves[a]);
+    const m = mod(a);
+    if (total === null) {
+      if (Object.hasOwn(saves, a)) explicitUnknown(`save:${a}`, `state/character.json#savingThrows.${a}`);
+      continue;
+    }
+    if (m === null || pb === null) {
+      importedOverride(`save:${a}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", `state/character.json#savingThrows.${a}`);
+      continue;
+    }
+    if (total - m === pb) saveProficiencies.push(a);
+    else if (total - m !== 0) importedOverride(`save:${a}`, total, "Uvezena vrijednost (izvor ne navodi izračun).", `state/character.json#savingThrows.${a}`);
+  }
+  if (Object.keys(saves).length > 0) {
+    findings.push({ code: "proficiency_inferred", severity: "info", message: "Proficiency saving throwova i vještina izvedena je iz zabilježenih zbrojeva (razlika = proficiency bonus)." });
+  }
+
+  const skillProficiencies: Record<string, "proficient" | "expertise"> = {};
+  const skills = isObj(character.skills) ? character.skills : {};
+  for (const [skill, raw] of Object.entries(skills)) {
+    const ability = getOwn(SKILLS, skill);
+    const total = int(raw);
+    const src = `state/character.json#skills.${skill}`;
+    if (!ability) {
+      findings.push({ code: "skill_unknown", severity: "warning", message: `Nepoznata vještina „${skill}”; nije mapirana (izvor sačuvan doslovno).`, source: src });
+      continue;
+    }
+    const m = mod(ability);
+    if (total === null) {
+      explicitUnknown(`skill:${skill}`, src);
+      continue;
+    }
+    if (m === null || pb === null) {
+      importedOverride(`skill:${skill}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", src);
+      continue;
+    }
+    if (total - m === pb) skillProficiencies[skill] = "proficient";
+    else if (total - m === 2 * pb) skillProficiencies[skill] = "expertise";
+    else if (total - m !== 0) importedOverride(`skill:${skill}`, total, "Uvezena vrijednost (izvor ne navodi izračun).", src);
+  }
+  if (Object.keys(skills).length > 0) {
+    findings.push({ code: "skills_unlisted_none", severity: "info", message: "Vještine koje izvor ne navodi tretiraju se bez proficiencyja." });
+  }
+
+  if (recordedPb !== null && recordedPb !== levelPb) {
+    importedOverride(
+      "proficiencyBonus",
+      recordedPb,
+      levelPb === null ? "Uvezena vrijednost; razina nije poznata." : `Uvezena vrijednost; izračun po razini daje ${levelPb}.`,
+      "state/character.json#proficiencyBonus",
+    );
+  }
+
+  const recordedInit = int(character.initiative);
+  const dexMod = mod("DEX");
+  if (recordedInit !== null && dexMod !== null && recordedInit !== dexMod) {
+    modifiers.push({
+      id: `${pcId}:bonus:initiative:imported`,
+      characterId: pcId,
+      target: "initiative",
+      kind: "bonus",
+      value: recordedInit - dexMod,
+      source: "Uvezena vrijednost",
+      reason: "Razlika zabilježene inicijative i DEX modifikatora (npr. značajka lika).",
+    });
+    findings.push({ code: "initiative_bonus_imported", severity: "info", message: `Inicijativa ${recordedInit} uz DEX ${dexMod >= 0 ? "+" : ""}${dexMod}: razlika ${recordedInit - dexMod} sačuvana kao bonus s izvorom.` });
+  } else if (recordedInit !== null && dexMod === null) {
+    importedOverride("initiative", recordedInit, "Uvezena vrijednost; DEX nije poznat pa se inicijativa ne može izračunati.", "state/character.json#initiative");
+  }
+
+  // Atribut čaranja: jednoznačno iz zabilježenog DC-a i napada, inače nepoznat.
+  let spellcastingAbility: Ability | null = null;
+  const dc = int(character.spellSaveDC);
+  const atk = int(character.spellAttackBonus);
+  if (dc !== null && pb !== null) {
+    const matches = ABILITIES.filter((a) => mod(a) !== null && 8 + pb + mod(a)! === dc && (atk === null || pb + mod(a)! === atk));
+    if (matches.length === 1) {
+      spellcastingAbility = matches[0]!;
+      findings.push({ code: "spellcasting_inferred", severity: "info", message: `Atribut čaranja ${spellcastingAbility} izveden iz zabilježenog DC-a ${dc}.` });
+    } else {
+      findings.push({ code: "spellcasting_ambiguous", severity: "warning", message: "Atribut čaranja nije jednoznačan; DC i napad sačuvani kao override.", details: { matches } });
+      importedOverride("spellSaveDc", dc, "Uvezena vrijednost.", "state/character.json#spellSaveDC");
+      if (atk !== null) importedOverride("spellAttack", atk, "Uvezena vrijednost.", "state/character.json#spellAttackBonus");
+    }
+  } else if (dc !== null || atk !== null) {
+    // Bez DC-a ili proficiency bonusa atribut se ne može izvesti; poznati zbrojevi ostaju poznati.
+    const why = pb === null ? "Uvezena vrijednost; atribut čaranja nije moguće izvesti (nepoznat proficiency bonus)." : "Uvezena vrijednost; atribut čaranja nije moguće izvesti bez zabilježenog DC-a.";
+    findings.push({ code: "spellcasting_unknown", severity: "warning", message: "Atribut čaranja nije poznat; zabilježeni DC i/ili napad sačuvani kao override." });
+    if (dc !== null) importedOverride("spellSaveDc", dc, why, "state/character.json#spellSaveDC");
+    if (atk !== null) importedOverride("spellAttack", atk, why, "state/character.json#spellAttackBonus");
+  }
+
+  const characterExt = {
+    level: level !== null && level >= 1 && level <= 20 ? level : null,
+    speedFt: int(character.speedFt),
+    acBase: int(character.ac),
+    spellcastingAbility,
+    abilities,
+    saveProficiencies: [...saveProficiencies].sort(),
+    skillProficiencies,
+    unknownTotals: [...new Set(unknownTotals)].sort(),
+  };
+
+  // Čarolije i značajke: nazivi iz izvora, bez opisa (ADR-0005); razina i koncentracija nepoznate.
+  const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  // Ista čarolija napisana različito (velika/mala slova, razmaci) spaja se u jedan zapis; oznake pripremljenosti se zbrajaju.
+  const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const prepared = new Set(strList(character.preparedSpells).map(norm));
+  const always = new Set(strList(character.alwaysPreparedSpells).map(norm));
+  const spellByKey = new Map<string, string[]>();
+  for (const name of [...strList(character.spells), ...strList(character.preparedSpells), ...strList(character.alwaysPreparedSpells)]) {
+    const variants = spellByKey.get(norm(name)) ?? [];
+    if (!variants.includes(name)) variants.push(name);
+    spellByKey.set(norm(name), variants);
+  }
+  for (const [, variants] of spellByKey) {
+    if (variants.length > 1) {
+      findings.push({ code: "spell_name_merged", severity: "warning", message: `Čarolija navedena u više oblika (${variants.map((v) => `„${v}”`).join(", ")}); uvezena kao jedna, naziv „${variants[0]}”.` });
+    }
+  }
+  const spellIds = uniqueIds([...spellByKey.values()].map((v) => v[0]!), (n) => `${pcId}:spell:${kebab(n)}`, "spell_id_collision", findings);
+  const spells: SpellState[] = [...spellByKey.entries()].map(([key, variants], i) => ({
+    id: spellIds[i]!,
+    characterId: pcId,
+    name: variants[0]!,
+    spellLevel: null,
+    known: true,
+    prepared: prepared.has(key) || always.has(key),
+    alwaysPrepared: always.has(key),
+    concentration: null,
+  }));
+  if (spells.length > 0) {
+    findings.push({ code: "spell_details_unknown", severity: "info", message: `${spells.length} čarolija uvezeno bez razine i oznake koncentracije (nema kataloga); postavljaju se u sheetu.` });
+  }
+  // Značajke se ne spajaju nagađanjem: različito napisani nazivi s istim ključem ostaju zasebni zapisi uz upozorenje.
+  const featureNames = [...new Set(strList(character.features))];
+  const featureIds = uniqueIds(featureNames, (n) => `${pcId}:feature:${kebab(n)}`, "feature_id_collision", findings);
+  const features: FeatureState[] = featureNames.map((name, i) => ({
+    id: featureIds[i]!,
+    characterId: pcId,
+    name,
+    kind: null,
+    resourcePoolId: null,
+    note: null,
+  }));
+  const conditions: ConditionState[] = strList(character.conditions).map((name, i) => ({
+    id: `${pcId}:condition:${pad(i + 1)}`,
+    characterId: pcId,
+    name,
+    source: "Uvoz",
+    durationNote: null,
+  }));
+  if (character.concentration !== null && character.concentration !== undefined) {
+    findings.push({ code: "concentration_not_mapped", severity: "warning", message: "Aktivna koncentracija iz izvora nije mapirana; postavi je u sheetu." });
+  }
+
+  // --- Profil lika: sve izvorno, sačuvano doslovno (i ono što je gore mapirano).
   const profileKeys = Object.keys(character).filter((k) => !["hp", "maxHp", "temporaryHp", "resources", "currency", "equipment", "externalItems"].includes(k));
   const profile = { characterId: pcId, data: Object.fromEntries(profileKeys.map((k) => [k, character[k]])), sourceRef: "state/character.json" };
 
@@ -380,7 +609,11 @@ export function buildImportPlan(
       id: campaignId,
       name: str(state.campaignName) ?? campaignId,
       members: [{ actorId: opts.ownerActorId, role: "owner" }],
-      characters: hp === null || hpTemp === null ? [] : [{ id: pcId, name: str(character.name) ?? pcId, hpCurrent: hp, hpMax, hpTemp }],
+      characters: hp === null || hpTemp === null ? [] : [{ id: pcId, name: str(character.name) ?? pcId, hpCurrent: hp, hpMax, hpTemp, ...characterExt }],
+      modifiers,
+      spells,
+      features,
+      conditions,
       resourcePools: pools,
       wallets,
     },
