@@ -45,8 +45,8 @@ export function createCampaign(
       for (const m of setup.members) insMember.run(setup.id, m.actorId, m.role, now);
 
       const insChar = db.prepare(
-        `INSERT INTO "Character" (id, campaignId, name, hpCurrent, hpMax, hpTemp, level, speedFt, acBase, spellcastingAbility, abStr, abDex, abCon, abInt, abWis, abCha, saveProficienciesJson, skillProficienciesJson)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO "Character" (id, campaignId, name, hpCurrent, hpMax, hpTemp, level, speedFt, acBase, spellcastingAbility, abStr, abDex, abCon, abInt, abWis, abCha, saveProficienciesJson, skillProficienciesJson, unknownTotalsJson)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const c of setup.characters) {
         insChar.run(
@@ -54,6 +54,7 @@ export function createCampaign(
           ...ABILITIES.map((a) => c.abilities[a]),
           JSON.stringify([...new Set(c.saveProficiencies)].sort()),
           JSON.stringify(c.skillProficiencies),
+          JSON.stringify([...new Set(c.unknownTotals)].sort()),
         );
       }
 

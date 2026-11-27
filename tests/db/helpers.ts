@@ -75,6 +75,7 @@ export function syntheticSetup(id = C1): CampaignSetup {
         abilities: { STR: 16, DEX: 10, CON: 14, INT: 8, WIS: 12, CHA: 14 },
         saveProficiencies: ["CHA", "WIS"],
         skillProficiencies: { Athletics: "proficient", Perception: "proficient" },
+        unknownTotals: [],
       },
     ],
     resourcePools: [

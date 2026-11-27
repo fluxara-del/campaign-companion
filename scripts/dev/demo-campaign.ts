@@ -21,6 +21,7 @@ export function demoCampaign(id: string, ownerActorId = "owner"): CampaignSetup 
         abilities: { STR: 17, DEX: 10, CON: 13, INT: 8, WIS: 13, CHA: 14 },
         saveProficiencies: ["CHA", "WIS"],
         skillProficiencies: { Athletics: "proficient", Perception: "proficient", Persuasion: "proficient" },
+        unknownTotals: [],
       },
     ],
     resourcePools: [

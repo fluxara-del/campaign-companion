@@ -78,6 +78,8 @@ function verifyReplayInSnapshot(db: Db, campaignId: string, opts: { afterEventsR
     problems.push(`Baseline je formata ${state.format ?? 1}, očekivan ${SNAPSHOT_FORMAT}; kampanju treba ponovno stvoriti ili uvesti.`);
   }
   if (snapshotHash(state) !== baseline.snapshotHash) problems.push("Hash baseline snapshot-a ne odgovara zapisu.");
+  // Baseline formata 2 stvoren prije polja `unknownTotals`: odsutno polje znači „nema izričito nepoznatih zbrojeva” (stupac ima isti default).
+  for (const c of Object.values(state.characters)) c.unknownTotals ??= [];
 
   const events = db
     .prepare(`SELECT seq, type, payloadJson FROM "DomainEvent" WHERE campaignId = ? AND seq > ? ORDER BY seq`)

@@ -84,6 +84,8 @@ model Character {
   saveProficienciesJson  String  @default("[]")
   /// JSON objekt vještina: "proficient" | "expertise"
   skillProficienciesJson String  @default("{}")
+  /// JSON polje ciljeva čiji je zbroj u izvoru izričito nepoznat (npr. "save:CHA")
+  unknownTotalsJson      String  @default("[]")
 
   campaign      Campaign          @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   pools         ResourcePool[]
