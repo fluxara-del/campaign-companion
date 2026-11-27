@@ -2,8 +2,10 @@ import type { Actor } from "@/server/store/batch-service";
 
 /**
  * Pristup HTTP sloju dok autentifikacija nije odlučena (O5):
- * - `KDZ_AUTH_MODE=local-owner`: jedan vlasnik, samo zahtjevi na loopback adresu
- *   (aplikacija se pokreće s `-H 127.0.0.1`); akter je `KDZ_LOCAL_OWNER_ACTOR` (zadano `owner`).
+ * - `KDZ_AUTH_MODE=local-owner`: jedan vlasnik; dopušteno samo kad je poslužitelj vezan na loopback
+ *   (`npm run dev` / `npm start` kroz `scripts/app/launch.mjs`, koji postavlja `KDZ_LISTEN_HOST`);
+ *   akter je `KDZ_LOCAL_OWNER_ACTOR` (zadano `owner`). Host zaglavlje se provjerava samo kao dodatna
+ *   obrana i NIJE sigurnosna granica.
  * - bilo što drugo (uključujući produkcijsku sliku bez postavke): API je isključen (503).
  * Mutacije dodatno traže isti origin (CSRF) i JSON tijelo.
  */
@@ -28,10 +30,26 @@ function hostnameOf(host: string | null): string | null {
   }
 }
 
+/** Loopback adresa na koju je poslužitelj vezan (postavlja je `scripts/app/launch.mjs`). */
+function boundToLoopback(): boolean {
+  const norm = (h: string) => h.trim().replace(/^\[|\]$/g, "").toLowerCase();
+  const listen = process.env.KDZ_LISTEN_HOST;
+  if (!listen || !LOOPBACK.has(norm(listen))) return false;
+  // Samostalni Next.js poslužitelj (Docker) veže se na HOSTNAME; ne-loopback vrijednost isključuje lokalni način.
+  const hostname = process.env.HOSTNAME;
+  return !hostname || LOOPBACK.has(norm(hostname));
+}
+
 export function resolveActor(req: Request): Actor {
   if (process.env.KDZ_AUTH_MODE !== "local-owner") {
     throw new AccessError(503, "auth_not_configured", "Prijava još nije konfigurirana; API je isključen.");
   }
+  // Sigurnosna granica lokalnog načina je loopback bind, ne zaglavlje zahtjeva: bez potvrđene
+  // loopback adrese (npr. `next start` bez -H, ili HOSTNAME=0.0.0.0) API se ne poslužuje.
+  if (!boundToLoopback()) {
+    throw new AccessError(503, "local_owner_requires_loopback_bind", "Lokalni način radi samo kad je aplikacija pokrenuta na 127.0.0.1 (npm run dev / npm start).");
+  }
+  // Provjera Host zaglavlja NIJE sigurnosna granica (klijent ga postavlja); samo dodatna obrana.
   const host = hostnameOf(req.headers.get("host") ?? new URL(req.url).host);
   if (!host || !LOOPBACK.has(host)) {
     throw new AccessError(403, "loopback_only", "Lokalni način rada dopušta samo pristup s ovog računala.");

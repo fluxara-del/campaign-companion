@@ -30,6 +30,8 @@ npm run dev
 
 Aplikacija je na <http://localhost:3000>, health check na `/api/health`.
 
+**Lokalni način bez prijave (`KDZ_AUTH_MODE=local-owner`, dok se ne odluči O5).** Po zadanom je isključen (u `.env.example` zakomentiran); za lokalni rad odkomentiraj ga u svom `.env`. `npm run dev` i `npm start` pokreću Next.js kroz `scripts/app/launch.mjs`, koji ga veže na `127.0.0.1` (ili `KDZ_LISTEN_HOST`) i odbija pokretanje ako je uz `local-owner` zadana ne-loopback adresa. API u tom načinu radi samo kad je bind potvrđen; `next start` pokrenut izravno (bez pokretača) ili slika s `HOSTNAME=0.0.0.0` dobiva 503. Provjera Host zaglavlja u API-ju samo je dodatna obrana i **nije sigurnosna granica**. `KDZ_LISTEN_HOST` se ne stavlja u `.env`: postavlja ga pokretač.
+
 | Naredba | Namjena |
 |---|---|
 | `npm run typecheck` / `lint` | TypeScript i ESLint |

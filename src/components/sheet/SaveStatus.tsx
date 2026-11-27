@@ -31,7 +31,7 @@ export function SaveStatus({ save, onRetry, onDismiss }: { save: SaveState; onRe
           Ponovi isti zahtjev
         </Button>
       ) : null}
-      {save.kind !== "idle" && save.kind !== "saving" && save.kind !== "checking" ? (
+      {save.kind !== "idle" && save.kind !== "saving" && save.kind !== "checking" && save.kind !== "offline" ? (
         <Button variant="quiet" onClick={onDismiss} aria-label="Zatvori obavijest">
           U redu
         </Button>

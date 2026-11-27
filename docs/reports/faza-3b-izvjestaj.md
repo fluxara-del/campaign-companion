@@ -50,3 +50,12 @@ Vlasnik je izabrao izgled prema svom primjeru i zatražio izmjenu specifikacije.
 | SUP-17-02 (Codex P2): 2xx s nečitljivim tijelom briše čekajući batch i prikazuje „Spremljeno, verzija undefined” | `postBatch`: uspjeh tek s pročitanom verzijom; inače se potvrda dohvaća s `GET …/batches/:batchId`, a ako ni to ne uspije, ishod je nepoznat i ostaje isti batch za „Ponovi isti zahtjev” | unit „postBatch”: `json()` baca, potvrda dostupna / nedostupna / 404 / prekid veze, tijelo bez verzije, 503 busy, 409, 422 |
 
 Mutacije i dalje idu samo kroz `POST …/batches` (`executeBatch`); ponavljanje šalje isti `batchId`. Lokalno: unit 33, DB 157, e2e 28/28.
+
+## Supervisor na `cde88d0`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-17-03: „samo loopback” oslanjao se na klijentov Host; `npm start` (`next start`) vezao se na sva sučelja, pa je zahtjev iz LAN-a s lažnim Host/Origin 127.0.0.1 dobivao vlasnički pristup | `npm run dev` / `npm start` idu kroz `scripts/app/launch.mjs`: bind na `127.0.0.1` (ili `KDZ_LISTEN_HOST`), a uz `local-owner` ne-loopback adresa odbija pokretanje. API u lokalnom načinu radi samo uz potvrđen loopback bind (`KDZ_LISTEN_HOST` iz pokretača, `HOSTNAME` nije ne-loopback); inače 503. Host provjera ostaje samo kao dodatna obrana i u kodu i README-u izričito nije sigurnosna granica. Po odluci vlasnika `local-owner` je u `.env.example` **isključen po zadanom** (zakomentiran, uz uputu). Nova arhitektura prijave nije uvedena (O5 otvoren) | unit „SUP-17-03”: lažni Host 127.0.0.1 bez potvrđenog binda (nepostavljeno, 0.0.0.0, LAN IP, ::) → 503; `HOSTNAME=0.0.0.0` → 503; pokretač odbija ne-loopback uz `local-owner`; ručno: `KDZ_AUTH_MODE=local-owner KDZ_LISTEN_HOST=0.0.0.0 npm start` izlazi s greškom |
+| SUP-17-04 (Codex P2): nova radnja nakon „nepoznatog” ishoda prepisivala je ili brisala nerazriješeni batch | `BatchSender`: dok postoji nerazriješeni batch (nepoznat ishod ili zauzeta baza), nova radnja se ne šalje i prikazuje se poruka; kontrole lista zaključane su (`fieldset disabled`) dok se ne ponovi isti zahtjev (isti `batchId`); obavijest se ne može zatvoriti prije razrješenja | unit „BatchSender”: nepoznat ishod pa nova radnja (ništa se ne šalje, isti batch se ponavlja), busy pa 409; e2e „nepoznat ishod: radnje zaključane …” (desktop i 390 px) |
+
+Lokalno: unit 37, e2e 30/30.

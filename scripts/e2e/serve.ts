@@ -14,7 +14,7 @@ const dir = path.join(os.tmpdir(), "kdz-e2e");
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 const db = path.join(dir, "e2e.db");
-const env = { ...process.env, DATABASE_URL: `file:${db}`, KDZ_AUTH_MODE: "local-owner", KDZ_LOCAL_OWNER_ACTOR: "owner" };
+const env = { ...process.env, DATABASE_URL: `file:${db}`, KDZ_AUTH_MODE: "local-owner", KDZ_LOCAL_OWNER_ACTOR: "owner", KDZ_LISTEN_HOST: "127.0.0.1" };
 
 execFileSync(process.execPath, [path.join(root, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy"], { cwd: root, env, stdio: "inherit" });
 const ids: string[] = [];

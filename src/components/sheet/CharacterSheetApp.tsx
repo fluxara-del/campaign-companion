@@ -22,7 +22,7 @@ type TabId = (typeof TABS)[number]["id"];
  * Promjena kartice ne šalje ništa poslužitelju.
  */
 export function CharacterSheetApp({ campaignId, characterId }: { campaignId: string; characterId: string }) {
-  const { sheet, loadError, save, submit, retry, dismiss } = useSheet(campaignId, characterId);
+  const { sheet, loadError, save, submit, retry, dismiss, blocked } = useSheet(campaignId, characterId);
   const [tab, setTab] = useState<TabId>("borba");
   const [rest, setRest] = useState<"short" | "long" | null>(null);
 
@@ -66,12 +66,14 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
             </p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <button type="button" className={headerBtn} onClick={() => setRest("short")}>
-              Kratki odmor
-            </button>
-            <button type="button" className={headerBtn} onClick={() => setRest("long")}>
-              Dugi odmor
-            </button>
+            <fieldset disabled={blocked} className="contents">
+              <button type="button" className={`${headerBtn} disabled:opacity-50`} onClick={() => setRest("short")}>
+                Kratki odmor
+              </button>
+              <button type="button" className={`${headerBtn} disabled:opacity-50`} onClick={() => setRest("long")}>
+                Dugi odmor
+              </button>
+            </fieldset>
             <span className="oznaka opacity-90" data-testid="state-version">
               Verzija {sheet.stateVersion}
             </span>
@@ -91,14 +93,20 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
       </div>
 
       <div className="mx-auto max-w-[1400px] space-y-3 px-4 pt-3">
-        <div className="flex flex-col gap-3 xl:flex-row">
+        {/* Dok prethodni batch nije razriješen, radnje su zaključane (ponavlja se isti batch u statusu). */}
+        <fieldset disabled={blocked} data-testid="sheet-actions" aria-describedby={blocked ? "unresolved-note" : undefined} className="flex min-w-0 flex-col gap-3 xl:flex-row">
           <div className="flex-1">
             <SummaryStrip sheet={sheet} submit={submit} />
           </div>
           <div className="xl:w-[24rem] xl:shrink-0">
             <HpBox sheet={sheet} submit={submit} />
           </div>
-        </div>
+        </fieldset>
+        {blocked ? (
+          <p id="unresolved-note" className="text-sm text-okvir-tamni">
+            Radnje su zaključane dok se ne ponovi prethodni zahtjev („Ponovi isti zahtjev”).
+          </p>
+        ) : null}
 
         <div className="grid gap-3 lg:grid-cols-[17rem_17rem_1fr]">
           <div className="space-y-3">
@@ -131,11 +139,13 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
                 </ul>
               </nav>
               <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`} className="pt-3">
-                {tab === "borba" ? <CombatTab sheet={sheet} submit={submit} /> : null}
-                {tab === "oprema" ? <EquipmentTab sheet={sheet} submit={submit} /> : null}
-                {tab === "magija" ? <MagicTab sheet={sheet} submit={submit} /> : null}
-                {tab === "sposobnosti" ? <AbilitiesTab sheet={sheet} submit={submit} /> : null}
-                {tab === "biljeske" ? <NotesTab sheet={sheet} submit={submit} /> : null}
+                <fieldset disabled={blocked} className="min-w-0">
+                  {tab === "borba" ? <CombatTab sheet={sheet} submit={submit} /> : null}
+                  {tab === "oprema" ? <EquipmentTab sheet={sheet} submit={submit} /> : null}
+                  {tab === "magija" ? <MagicTab sheet={sheet} submit={submit} /> : null}
+                  {tab === "sposobnosti" ? <AbilitiesTab sheet={sheet} submit={submit} /> : null}
+                  {tab === "biljeske" ? <NotesTab sheet={sheet} submit={submit} /> : null}
+                </fieldset>
               </div>
             </section>
           </div>

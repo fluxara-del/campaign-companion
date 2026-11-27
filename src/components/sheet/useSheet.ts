@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BatchCommand } from "@/domain/commands";
 import type { CharacterSheet } from "@/server/store/sheet";
 
@@ -64,6 +64,79 @@ export async function postBatch(base: string, body: Record<string, unknown>, fet
   return { kind: "rejected", message: data.message ?? "Zahtjev je odbijen.", code: data.code ?? "error" };
 }
 
+export const UNRESOLVED_MESSAGE = "Prethodni zahtjev nije razriješen. Ponovi isti zahtjev prije nove radnje.";
+
+/**
+ * Slanje batcheva bez Reacta (testira se zasebno). Dok postoji nerazriješeni batch (ishod nepoznat ili
+ * baza zauzeta), nova radnja se ne šalje: najprije se mora ponoviti isti batch (isti batchId), koji
+ * poslužitelj idempotentno potvrdi ili odbije. Tako nova radnja ne može prepisati ni izgubiti stari batch.
+ */
+export class BatchSender {
+  private pending: PendingBatch | null = null;
+
+  constructor(
+    private readonly base: string,
+    private readonly deps: {
+      onState: (s: SaveState) => void;
+      onBlocked: (blocked: boolean) => void;
+      reload: () => Promise<unknown>;
+      fetchImpl?: typeof fetch;
+    },
+  ) {}
+
+  get unresolved(): PendingBatch | null {
+    return this.pending;
+  }
+
+  private setPending(b: PendingBatch | null) {
+    this.pending = b;
+    this.deps.onBlocked(b !== null);
+  }
+
+  /** Nova radnja; odbija se dok postoji nerazriješeni batch. */
+  async submit(batch: PendingBatch): Promise<boolean> {
+    if (this.pending) {
+      this.deps.onState({ kind: "offline", label: this.pending.label, message: UNRESOLVED_MESSAGE });
+      return false;
+    }
+    return this.send(batch);
+  }
+
+  /** Ponavlja nerazriješeni batch (isti batchId). */
+  async retry(): Promise<boolean> {
+    return this.pending ? this.send(this.pending) : false;
+  }
+
+  private async send(batch: PendingBatch): Promise<boolean> {
+    const { onState, reload, fetchImpl } = this.deps;
+    onState({ kind: "saving", label: batch.label });
+    const out = await postBatch(this.base, batch.body, fetchImpl ?? fetch);
+    if (out.kind === "saved") {
+      this.setPending(null);
+      onState({ kind: "saved", label: batch.label, version: out.version });
+      await reload();
+      return true;
+    }
+    if (out.kind === "unknown" || out.kind === "busy") {
+      this.setPending(batch);
+      onState({
+        kind: "offline",
+        label: batch.label,
+        message: out.kind === "busy" ? "Baza je zauzeta; ponovi isti zahtjev." : "Veza je prekinuta. Ishod nije poznat; ponovi isti zahtjev.",
+      });
+      return false;
+    }
+    this.setPending(null);
+    if (out.kind === "conflict") {
+      onState({ kind: "conflict", label: batch.label, message: out.message });
+      await reload();
+      return false;
+    }
+    onState({ kind: "rejected", label: batch.label, message: out.message, code: out.code });
+    return false;
+  }
+}
+
 /**
  * Učitavanje sheeta i slanje naredbi kroz jedini domenski put (`POST …/batches`).
  * „Spremljeno, verzija N” prikazuje se tek nakon potvrde poslužitelja; nakon prekida veze
@@ -73,7 +146,7 @@ export function useSheet(campaignId: string, characterId: string) {
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
-  const pending = useRef<PendingBatch | null>(null);
+  const [blocked, setBlocked] = useState(false);
   const base = `/api/campaigns/${encodeURIComponent(campaignId)}`;
 
   const reload = useCallback(async () => {
@@ -108,42 +181,13 @@ export function useSheet(campaignId: string, characterId: string) {
     };
   }, [base, characterId]);
 
-  const send = useCallback(
-    async (batch: PendingBatch): Promise<boolean> => {
-      setSave({ kind: "saving", label: batch.label });
-      const out = await postBatch(base, batch.body);
-      if (out.kind === "saved") {
-        pending.current = null;
-        setSave({ kind: "saved", label: batch.label, version: out.version });
-        await reload();
-        return true;
-      }
-      if (out.kind === "unknown") {
-        pending.current = batch;
-        setSave({ kind: "offline", label: batch.label, message: "Veza je prekinuta. Ishod nije poznat; ponovi isti zahtjev." });
-        return false;
-      }
-      if (out.kind === "busy") {
-        pending.current = batch;
-        setSave({ kind: "offline", label: batch.label, message: "Baza je zauzeta; ponovi isti zahtjev." });
-        return false;
-      }
-      pending.current = null;
-      if (out.kind === "conflict") {
-        setSave({ kind: "conflict", label: batch.label, message: out.message });
-        await reload();
-        return false;
-      }
-      setSave({ kind: "rejected", label: batch.label, message: out.message, code: out.code });
-      return false;
-    },
-    [base, reload],
-  );
+  const sender = useMemo(() => new BatchSender(base, { onState: setSave, onBlocked: setBlocked, reload }), [base, reload]);
 
   /** Šalje jednu ili više naredbi kao jedan atomski batch. */
   const submit = useCallback(
     async (label: string, commands: CommandInput[]): Promise<boolean> => {
       if (!sheet) return false;
+      if (sender.unresolved) return sender.submit({ body: {}, label });
       setSave({ kind: "checking", label });
       const body = {
         schemaVersion: 1,
@@ -157,16 +201,18 @@ export function useSheet(campaignId: string, characterId: string) {
           payload: c.payload,
         })),
       };
-      return send({ body, label });
+      return sender.submit({ body, label });
     },
-    [campaignId, send, sheet],
+    [campaignId, sender, sheet],
   );
 
   /** Ponavlja isti batch nakon prekida veze (idempotentno). */
-  const retry = useCallback(async () => {
-    if (pending.current) return send(pending.current);
-    return false;
-  }, [send]);
+  const retry = useCallback(() => sender.retry(), [sender]);
 
-  return { sheet, loadError, save, submit, retry, reload, dismiss: () => setSave({ kind: "idle" }) };
+  // Obavijest o nerazriješenom batchu ne može se zatvoriti dok se batch ne ponovi.
+  const dismiss = useCallback(() => {
+    if (!sender.unresolved) setSave({ kind: "idle" });
+  }, [sender]);
+
+  return { sheet, loadError, save, submit, retry, reload, dismiss, blocked };
 }

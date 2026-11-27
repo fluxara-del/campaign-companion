@@ -111,6 +111,37 @@ test("premjesti predmet u ruksak (ID spremnika s dvotočkama)", async ({ page },
   await expect(pack.getByTestId(`item-${c.pc}:item:sword`)).toContainText("(u spremniku)");
 });
 
+test("nepoznat ishod: radnje zaključane dok se ne ponovi isti zahtjev", async ({ page }, info) => {
+  await open(page, info, 15);
+  await tab(page, "Borba");
+  const posted: string[] = [];
+  // Prvi POST se prekida prije poslužitelja (ishod nepoznat za klijenta).
+  let drop = true;
+  await page.route("**/api/campaigns/*/batches", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posted.push(JSON.parse(route.request().postData() ?? "{}").batchId);
+    if (drop) {
+      drop = false;
+      return route.abort("connectionreset");
+    }
+    return route.continue();
+  });
+  await page.locator("#hp-amount").fill("3");
+  await page.getByRole("button", { name: "Šteta" }).click();
+  const status = page.getByTestId("save-status");
+  await expect(status).toHaveAttribute("data-state", "offline");
+  await expect(page.getByRole("button", { name: "Šteta" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Liječenje" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Kratki odmor" })).toBeDisabled();
+  await expect(status.getByRole("button", { name: "Zatvori obavijest" })).toHaveCount(0);
+  expect(posted).toHaveLength(1);
+  await status.getByRole("button", { name: "Ponovi isti zahtjev" }).click();
+  await expectSaved(page, 1);
+  expect(posted).toEqual([posted[0], posted[0]]);
+  await expect(page.getByTestId("hp")).toHaveText("19 / 22");
+  await expect(page.getByRole("button", { name: "Šteta" })).toBeEnabled();
+});
+
 test("transfer predmeta NPC-u (spremnik nosi sadržaj)", async ({ page }, info) => {
   const c = await open(page, info, 6);
   await tab(page, "Oprema");

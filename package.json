@@ -9,9 +9,9 @@
     "node": ">=24.11.0 <25"
   },
   "scripts": {
-    "dev": "next dev -H 127.0.0.1",
+    "dev": "node scripts/app/launch.mjs dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/app/launch.mjs start",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
