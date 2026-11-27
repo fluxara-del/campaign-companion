@@ -330,12 +330,22 @@ export function buildImportPlan(
     findings.push({ code: "imported_override", severity: "warning", message: `${target}: zabilježeno ${value} ne odgovara izračunu; sačuvano kao override s razlogom.`, source: src });
   };
 
+  // Polje prisutno u izvoru, ali bez cijelog broja (npr. null): zbroj je izričito nepoznat, ne „bez proficiencyja”.
+  const unknownTotals: string[] = [];
+  const explicitUnknown = (target: string, src: string) => {
+    unknownTotals.push(target);
+    findings.push({ code: "total_unknown", severity: "warning", message: `${target}: izvor navodi nepoznatu vrijednost; ostaje nepoznato u sheetu.`, source: src });
+  };
+
   const saveProficiencies: Ability[] = [];
   const saves = isObj(character.savingThrows) ? character.savingThrows : {};
   for (const a of ABILITIES) {
     const total = int(saves[a]);
     const m = mod(a);
-    if (total === null) continue;
+    if (total === null) {
+      if (Object.hasOwn(saves, a)) explicitUnknown(`save:${a}`, `state/character.json#savingThrows.${a}`);
+      continue;
+    }
     if (m === null || pb === null) {
       importedOverride(`save:${a}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", `state/character.json#savingThrows.${a}`);
       continue;
@@ -358,7 +368,10 @@ export function buildImportPlan(
       continue;
     }
     const m = mod(ability);
-    if (total === null) continue;
+    if (total === null) {
+      explicitUnknown(`skill:${skill}`, src);
+      continue;
+    }
     if (m === null || pb === null) {
       importedOverride(`skill:${skill}`, total, "Uvezena vrijednost; proficiency nije moguće izvesti (nepoznata razina ili atribut).", src);
       continue;
@@ -427,6 +440,7 @@ export function buildImportPlan(
     abilities,
     saveProficiencies: [...saveProficiencies].sort(),
     skillProficiencies,
+    unknownTotals: [...new Set(unknownTotals)].sort(),
   };
 
   // Čarolije i značajke: nazivi iz izvora, bez opisa (ADR-0005); razina i koncentracija nepoznate.

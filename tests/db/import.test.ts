@@ -697,3 +697,37 @@ describe("Zabilježena inicijativa uz nepoznat DEX (Codex P2 na 20e7c6a)", () =>
     expect(d.initiative.override?.source).toBeTruthy();
   }, 60_000);
 });
+
+describe("Izričito nepoznat zbroj u izvoru ostaje nepoznat (Codex P1 na 5513d9a)", () => {
+  it("savingThrows.CHA: null i skills.Persuasion: null uz poznat CHA → nepoznato nakon ponovnog učitavanja", async () => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        c.savingThrows.CHA = null;
+        c.skills.Persuasion = null;
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const st = loadState(db, "UZR-001");
+    const stored = db.prepare(`SELECT unknownTotalsJson FROM "Character" WHERE id = 'PC-001'`).get() as { unknownTotalsJson: string };
+    db.close();
+    expect(JSON.parse(stored.unknownTotalsJson)).toEqual(["save:CHA", "skill:Persuasion"]);
+    const d = deriveSheet(st, "PC-001")!;
+    expect(st.characters["PC-001"]!.abilities.CHA).toBe(14);
+    expect(d.saves.CHA.value).toBeNull();
+    expect(d.saves.CHA.unknownBecause).toMatch(/izričito/);
+    expect(d.skills.Persuasion!.value).toBeNull();
+    expect(d.skills.Persuasion!.unknownBecause).toMatch(/izričito/);
+    // Kontrola: vještina koju izvor ne navodi (poznat izostanak proficiencyja) daje modifikator atributa.
+    expect(d.skills.Deception!.value).toBe(2);
+    // Kontrola: poznati zbrojevi ostaju jednaki zabilježenima.
+    expect(d.saves.WIS.value).toBe(3);
+    expect(d.saves.STR.value).toBe(3);
+    expect(r.report.findings.filter((f) => f.code === "total_unknown")).toHaveLength(2);
+  }, 60_000);
+});

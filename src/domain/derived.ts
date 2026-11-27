@@ -60,6 +60,7 @@ function finalize(state: CampaignState, c: CharacterState, target: string, base:
   };
 }
 
+const EXPLICIT_UNKNOWN = "Izvor izričito navodi da je vrijednost nepoznata.";
 const unknown = (why: string): Derived => ({ value: null, parts: [], override: null, unknownBecause: why });
 
 export type CharacterSheetDerived = {
@@ -116,7 +117,7 @@ export function deriveSheet(state: CampaignState, characterId: string): Characte
   const saves = {} as CharacterSheetDerived["saves"];
   for (const a of ABILITIES) {
     const proficient = c.saveProficiencies.includes(a);
-    saves[a] = { ...finalize(state, c, `save:${a}`, withProficiency(`${a} modifikator`, mod(a), proficient ? 1 : 0, `${a} nije poznat.`)), proficient };
+    saves[a] = { ...finalize(state, c, `save:${a}`, c.unknownTotals.includes(`save:${a}`) ? unknown(EXPLICIT_UNKNOWN) : withProficiency(`${a} modifikator`, mod(a), proficient ? 1 : 0, `${a} nije poznat.`)), proficient };
   }
 
   const skills = {} as CharacterSheetDerived["skills"];
@@ -124,7 +125,7 @@ export function deriveSheet(state: CampaignState, characterId: string): Characte
     const p = c.skillProficiencies[skill];
     const mult = p === "expertise" ? 2 : p === "proficient" ? 1 : 0;
     skills[skill] = {
-      ...finalize(state, c, `skill:${skill}`, withProficiency(`${ability} modifikator`, mod(ability), mult, `${ability} nije poznat.`)),
+      ...finalize(state, c, `skill:${skill}`, c.unknownTotals.includes(`skill:${skill}`) ? unknown(EXPLICIT_UNKNOWN) : withProficiency(`${ability} modifikator`, mod(ability), mult, `${ability} nije poznat.`)),
       ability,
       proficiency: p ?? "none",
     };

@@ -23,6 +23,8 @@ export type CharacterState = {
   /** Sortirano, bez duplikata. */
   saveProficiencies: Ability[];
   skillProficiencies: Record<string, "proficient" | "expertise">;
+  /** Zbrojevi koje izvor izričito navodi kao nepoznate (`save:CHA`, `skill:Persuasion`); sortirano. */
+  unknownTotals: string[];
 };
 
 export type ResourcePoolState = {

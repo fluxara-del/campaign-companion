@@ -28,6 +28,7 @@ function state(): CampaignState {
         abilities: { STR: 16, DEX: 10, CON: 14, INT: 8, WIS: 12, CHA: 14 },
         saveProficiencies: ["CHA", "WIS"],
         skillProficiencies: { Athletics: "proficient" },
+        unknownTotals: [],
       },
     },
     resourcePools: {

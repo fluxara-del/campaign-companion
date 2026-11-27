@@ -74,6 +74,12 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 |---|---|---|
 | P1: `inventory[].ownerRef` u sheetu otkriva ID DM-only NPC-a kada lik nosi njegov predmet | Read model za ulogu koja nije vlasnik vraća `ownerRef: null` kad je vlasnik DM-only NPC; vlasništvo u bazi se ne mijenja | „P1 (dd09670): inventar …”: izravno nošen predmet i predmet u spremniku; cijeli odgovor za igrača i promatrača bez ID-a i imena; DM vidi vlasnika; vidljive reference (lik, vidljivi NPC) ostaju; čitanje ne mijenja bazu. Kontrolna provjera: bez ispravka test pada |
 
+## Codex i supervisor na `5513d9a`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: `savingThrows.CHA: null` ili `skills.Persuasion: null` uvozi se kao „bez proficiencyja” pa sheet prikazuje +2 | Polje prisutno u izvoru bez cijelog broja bilježi se kao izričito nepoznato (`Character.unknownTotalsJson`, nalaz `total_unknown`); izračun za taj cilj daje nepoznato (ručni override i dalje moguć). Nova nedestruktivna migracija `20261127170000_character_unknown_totals` (samo `ADD COLUMN` s defaultom `[]`). Baseline formata 2 bez novog polja čita se kao `[]` | „Izričito nepoznat zbroj …”: oba polja nepoznata nakon ponovnog učitavanja; kontrole: nenavedena vještina daje modifikator, poznati zbrojevi sačuvani. „baseline formata 2 bez polja unknownTotals …”: replay prolazi. Oba testa padaju bez ispravka |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):

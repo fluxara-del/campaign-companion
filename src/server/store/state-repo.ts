@@ -37,6 +37,7 @@ type CharacterRow = {
   abCha: number | null;
   saveProficienciesJson: string;
   skillProficienciesJson: string;
+  unknownTotalsJson: string;
 };
 
 function rowsById<T extends { id: string }>(rows: T[]): Record<string, T> {
@@ -66,6 +67,7 @@ export function loadState(db: Db, campaignId: string): CampaignState {
       abilities,
       saveProficiencies: [...new Set(JSON.parse(r.saveProficienciesJson) as Ability[])].sort(),
       skillProficiencies: JSON.parse(r.skillProficienciesJson) as CharacterState["skillProficiencies"],
+      unknownTotals: [...new Set(JSON.parse(r.unknownTotalsJson) as string[])].sort(),
     });
   }
 
@@ -166,7 +168,7 @@ export function persistChanges(db: Db, before: CampaignState, after: CampaignSta
   );
   for (const [id, c] of Object.entries(after.characters)) {
     const b = getOwn(before.characters, id)!;
-    const fixed = (x: CharacterState) => [x.name, x.hpMax, x.level, x.speedFt, x.acBase, x.spellcastingAbility, x.saveProficiencies, x.skillProficiencies];
+    const fixed = (x: CharacterState) => [x.name, x.hpMax, x.level, x.speedFt, x.acBase, x.spellcastingAbility, x.saveProficiencies, x.skillProficiencies, x.unknownTotals];
     if (!same(fixed(b), fixed(c))) throw new Error("Neočekivana promjena polja lika.");
     if (b.hpCurrent !== c.hpCurrent || b.hpTemp !== c.hpTemp || !same(b.abilities, c.abilities)) {
       mustUpdate(updChar.run(c.hpCurrent, c.hpTemp, ...ABILITIES.map((a) => c.abilities[a]), cid, id), `lik ${id}`);

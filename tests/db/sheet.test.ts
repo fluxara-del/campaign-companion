@@ -5,7 +5,7 @@ import { DomainError } from "@/domain/errors";
 import { executeBatch } from "@/server/store/batch-service";
 import type { Db } from "@/server/store/connection";
 import { createCampaign, type CampaignSetup } from "@/server/store/campaign-setup";
-import { verifyReplay } from "@/server/store/replay";
+import { snapshotHash, verifyReplay } from "@/server/store/replay";
 import { getCharacterSheet } from "@/server/store/sheet";
 import { loadState, loadVisibleJournal } from "@/server/store/state-repo";
 import { createTemplate, freshDb } from "./helpers";
@@ -41,6 +41,7 @@ function setup(): CampaignSetup {
         abilities: { STR: 17, DEX: 10, CON: 13, INT: 8, WIS: 13, CHA: 14 },
         saveProficiencies: ["CHA", "WIS"],
         skillProficiencies: { Athletics: "proficient", Perception: "proficient" },
+        unknownTotals: [],
       },
     ],
     resourcePools: [
@@ -478,6 +479,18 @@ describe("Codex nalazi na PR-u #16", () => {
     check();
     expect(version).toBe(v + 1);
     expect(verifyReplay(db, CID).ok).toBe(true);
+  });
+
+  it("baseline formata 2 bez polja unknownTotals (prije migracije 20261127170000) i dalje prolazi replay", () => {
+    run([cmd("ApplyDamage", { characterId: PC, amount: 3, damageType: null })]);
+    const b = db.prepare(`SELECT id, snapshotJson FROM "CampaignBaseline" WHERE campaignId = ?`).get(CID) as { id: string; snapshotJson: string };
+    const old = JSON.parse(b.snapshotJson);
+    for (const c of Object.values(old.characters) as Record<string, unknown>[]) delete c.unknownTotals;
+    // Samo u privremenoj testnoj bazi: simulira baseline zapisan starijim kodom.
+    db.exec(`DROP TRIGGER "CampaignBaseline_no_update"`);
+    db.prepare(`UPDATE "CampaignBaseline" SET snapshotJson = ?, snapshotHash = ? WHERE id = ?`).run(JSON.stringify(old), snapshotHash(old), b.id);
+    expect(verifyReplay(db, CID).ok).toBe(true);
+    expect(sheet().derived.saves.WIS.value).not.toBeNull();
   });
 
   it("P2: stari concentration save ne djeluje na novu koncentraciju (druga čarolija)", () => {
