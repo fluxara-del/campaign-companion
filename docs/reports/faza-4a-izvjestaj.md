@@ -35,3 +35,12 @@ Kontrolne provjere: bez filtra vidljivosti u `getJournal` i bez maskiranja DM is
 - Legacy povijest (`LegacyEvent`, `SourceDocument`) još nije u izvozu (vidljivost, O3).
 - AI sažeci (`summary`) dolaze s Fazom 5.
 - Pretraga je linearna nad vidljivim unosima (dovoljno za jednu kampanju); FTS po potrebi kasnije.
+
+## Codex i supervisor na `ef0263e`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-19-01 (Codex P2): kursor je bio samo `lastSeq`, pa je granica stranice između dva unosa istog zadnjeg događaja (bilješka i projekcija revizije) trajno preskakala drugi | Složeni kursor `{ lastSeq, id }` koji prati poredak prikaza (`lastSeq` silazno, `id` uzlazno); odgovor vraća `nextCursor` | „unosi istog zadnjeg događaja ne ispadaju na granici stranice (limit 1)” |
+| SUP-19-02 (Codex P2): javna zamjena DM-only tvrdnje nosila je `sourceEventId` i `createdSeq` skrivenog događaja ispravke (igrač i player izvoz) | Za ulogu koja nije vlasnik: `sourceEventId`/`createdSeq` su `null` kad izvorni događaj nije vidljiv; `correctedByEventId`/`supersededById` se uklanjaju kad pokazuju na DM-only događaj ili tvrdnju. Vlasnik vidi puni trag. Bez promjene sheme | „SUP-19-02: javna zamjena DM-only tvrdnje …” (igrač i promatrač), „SUP-19-02: player izvoz …” (nijedna datoteka ne sadrži ID skrivenih događaja) |
+
+Kontrolna provjera: bez ispravaka sva tri nova testa padaju.

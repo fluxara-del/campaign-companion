@@ -16,8 +16,8 @@ export type JournalFilters = {
   kind?: "manual" | "projection" | null;
   knowledgeKind?: "observed" | "reported" | "rumor" | "inferred" | "canon" | null;
   q?: string | null;
-  /** Stranica: unosi stariji od ovog `seq` (kursor iz prethodne stranice). */
-  beforeSeq?: number | null;
+  /** Stranica: unosi iza ovog kursora u poretku prikaza (kursor iz prethodne stranice). */
+  cursor?: JournalCursor | null;
   limit?: number;
 };
 
@@ -35,7 +35,12 @@ export type JournalEntryView = {
   events: JournalEventView[];
 };
 export type SessionView = { id: string; number: number; title: string | null; status: "open" | "closed"; startVersion: number; endVersion: number | null; startedAt: string; endedAt: string | null };
-export type JournalPage = { campaignId: string; stateVersion: number; sessions: SessionView[]; entries: JournalEntryView[]; nextBeforeSeq: number | null };
+/** Složeni kursor koji prati poredak prikaza (lastSeq silazno, zatim id uzlazno): više unosa istog batcha dijeli lastSeq. */
+export type JournalCursor = { lastSeq: number; id: string };
+export type JournalPage = { campaignId: string; stateVersion: number; sessions: SessionView[]; entries: JournalEntryView[]; nextCursor: JournalCursor | null };
+
+/** Poredak prikaza: najnovije prvo, pa po ID-u. */
+const byDisplayOrder = (a: { lastSeq: number; id: string }, b: { lastSeq: number; id: string }) => b.lastSeq - a.lastSeq || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 const REF_KEYS = new Set(["characterId", "holderRef", "subjectId", "ownerRef"]);
 
@@ -99,14 +104,14 @@ export function getJournal(db: Db, actor: Actor, campaignId: string, filters: Jo
         if (filters.sessionId && !events.some((e) => e.sessionId === filters.sessionId)) continue;
         if (filters.refId && !events.some((e) => e.refs.includes(filters.refId!))) continue;
         if (filters.knowledgeKind && !events.some((e) => e.knowledgeKind === filters.knowledgeKind)) continue;
-        if (filters.beforeSeq != null && lastSeq >= filters.beforeSeq) continue;
+        if (filters.cursor && byDisplayOrder(entry, filters.cursor) <= 0) continue;
         if (q && !normalizeSearch(`${entry.title ?? ""} ${entry.text}`).includes(q)) continue;
         entries.push(entry);
       }
       // Najnovije prvo; stabilno po zadnjem povezanom događaju.
-      entries.sort((a, b) => b.lastSeq - a.lastSeq || (a.id < b.id ? -1 : 1));
+      entries.sort(byDisplayOrder);
       const page = entries.slice(0, limit);
-      return { campaignId, stateVersion, sessions, entries: page, nextBeforeSeq: entries.length > limit ? page.at(-1)!.lastSeq : null };
+      return { campaignId, stateVersion, sessions, entries: page, nextCursor: entries.length > limit ? { lastSeq: page.at(-1)!.lastSeq, id: page.at(-1)!.id } : null };
     })
     .deferred();
 }
@@ -120,8 +125,9 @@ export type AssertionView = {
   visibility: Visibility;
   sourceRef: string | null;
   status: "active" | "superseded" | "retracted";
-  sourceEventId: string;
-  createdSeq: number;
+  /** Za igrača null ako je izvorni događaj vidljiv samo DM-u (npr. javna zamjena nastala DM-only ispravkom). */
+  sourceEventId: string | null;
+  createdSeq: number | null;
   correctedByEventId: string | null;
   supersededById: string | null;
 };
@@ -142,14 +148,25 @@ export function getKnowledgeForRole(db: Db, campaignId: string, role: string, fi
   const rows = db
     .prepare(
       `SELECT a.id, a.subjectKind, a.subjectId, a.text, a.knowledgeKind, a.visibility, a.sourceRef, a.status, a.sourceEventId, a.createdSeq, a.correctedByEventId, a.supersededById,
-              (SELECT e.visibility FROM "DomainEvent" e WHERE e.campaignId = a.campaignId AND e.id = a.correctedByEventId) AS correctionVisibility
+              (SELECT e.visibility FROM "DomainEvent" e WHERE e.campaignId = a.campaignId AND e.id = a.correctedByEventId) AS correctionVisibility,
+              (SELECT e.visibility FROM "DomainEvent" e WHERE e.campaignId = a.campaignId AND e.id = a.sourceEventId) AS sourceVisibility,
+              (SELECT r.visibility FROM "KnowledgeAssertion" r WHERE r.campaignId = a.campaignId AND r.id = a.supersededById) AS replacementVisibility
          FROM "KnowledgeAssertion" a WHERE a.campaignId = ? AND ${visibilityClause(role).replace(/visibility/g, "a.visibility")} ORDER BY a.createdSeq, a.id`,
     )
-    .all(campaignId) as (AssertionView & { correctionVisibility: Visibility | null })[];
+    .all(campaignId) as (AssertionView & { correctionVisibility: Visibility | null; sourceVisibility: Visibility | null; replacementVisibility: Visibility | null })[];
   return rows
-    .map(({ correctionVisibility, ...a }) =>
-      !owner && correctionVisibility === "dm" ? { ...a, status: "active" as const, correctedByEventId: null, supersededById: null } : a,
-    )
+    .map(({ correctionVisibility, sourceVisibility, replacementVisibility, ...a }) => {
+      if (owner) return a;
+      // Za ostale uloge nijedna referenca ne smije pokazivati na događaj ili tvrdnju vidljivu samo DM-u.
+      const v: AssertionView = { ...a };
+      if (sourceVisibility === "dm") {
+        v.sourceEventId = null;
+        v.createdSeq = null;
+      }
+      if (correctionVisibility === "dm") Object.assign(v, { status: "active", correctedByEventId: null, supersededById: null });
+      else if (replacementVisibility === "dm") v.supersededById = null;
+      return v;
+    })
     .filter((a) => (filter.subjectKind ? a.subjectKind === filter.subjectKind : true))
     .filter((a) => (filter.subjectId ? a.subjectId === filter.subjectId : true))
     .filter((a) => filter.includeHistory || a.status === "active");

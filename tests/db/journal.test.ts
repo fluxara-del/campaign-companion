@@ -214,9 +214,46 @@ describe("Filtriranje tajni na serveru", () => {
     }
   });
 
+  it("SUP-19-02: javna zamjena DM-only tvrdnje ne otkriva ID ni seq skrivenih događaja", () => {
+    const r1 = run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "DM-TAJNA: zvonar je kultist.", knowledgeKind: "canon", visibility: "dm", sourceRef: null })]);
+    const hiddenFact = eventId(r1, "WorldFactRecorded");
+    const r2 = run([cmd("CorrectConfirmedFact", { targetEventId: hiddenFact, reason: "Otkriveno javno", replacement: { text: "Zvonar je nestao.", knowledgeKind: "observed", visibility: "player" } })]);
+    const hiddenCorrection = eventId(r2, "FactCorrected");
+    expect(db.prepare(`SELECT visibility FROM "DomainEvent" WHERE id = ?`).get(hiddenCorrection)).toEqual({ visibility: "dm" });
+    for (const actor of [PLAYER, VIEWER]) {
+      const k = getKnowledge(db, actor, C1, { includeHistory: true });
+      expect(k).toEqual([expect.objectContaining({ text: "Zvonar je nestao.", status: "active", sourceEventId: null, createdSeq: null, correctedByEventId: null, supersededById: null })]);
+      expect(JSON.stringify(k)).not.toContain(hiddenFact);
+      expect(JSON.stringify(k)).not.toContain(hiddenCorrection);
+    }
+    // Vlasnik vidi puni trag.
+    expect(getKnowledge(db, OWNER, C1, { includeHistory: true }).find((a) => a.text === "Zvonar je nestao.")).toMatchObject({ sourceEventId: hiddenCorrection, createdSeq: 2 });
+  });
+
   it("stranac nema pristup dnevniku ni znanju", () => {
     expect(fail(() => getJournal(db, { actorId: "stranger" }, C1)).code).toBe("forbidden");
     expect(fail(() => getKnowledge(db, { actorId: "stranger" }, C1)).code).toBe("forbidden");
+  });
+});
+
+describe("Straničenje dnevnika (SUP-19-01)", () => {
+  it("unosi istog zadnjeg događaja ne ispadaju na granici stranice (limit 1)", () => {
+    const n = run([cmd("AppendJournalNote", { title: "A", text: "prva", visibility: "player" })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null })]);
+    // Revizija veže isti događaj na bilješku i na projekcijski unos batcha: dva unosa dijele lastSeq.
+    run([cmd("ReviseJournalNote", { journalEntryId: n.journalEntryIds.at(-1)!, expectedRevision: 1, title: "A", text: "druga" })]);
+    const all = getJournal(db, OWNER, C1).entries;
+    expect(all[0]!.lastSeq).toBe(all[1]!.lastSeq);
+    const paged: string[] = [];
+    let cursor = null as ReturnType<typeof getJournal>["nextCursor"];
+    for (let i = 0; i < 10; i++) {
+      const page = getJournal(db, OWNER, C1, { limit: 1, cursor });
+      paged.push(...page.entries.map((e) => e.id));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(paged).toEqual(all.map((e) => e.id));
+    expect(new Set(paged).size).toBe(all.length);
   });
 });
 

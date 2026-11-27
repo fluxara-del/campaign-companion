@@ -89,6 +89,20 @@ describe("Verzionirani izvoz", () => {
     expect(exportCampaign(db, PLAYER, { campaignId: C1, outRoot: out, audience: "player" }).manifest.audience).toBe("player");
   });
 
+  it("SUP-19-02: player izvoz javne zamjene DM-only tvrdnje ne sadrži ID ni seq skrivenih događaja", () => {
+    const hidden = db.prepare(`SELECT id, seq FROM "DomainEvent" WHERE campaignId = ? AND type = 'WorldFactRecorded' AND visibility = 'dm'`).get(C1) as { id: string; seq: number };
+    const corr = run([cmd("CorrectConfirmedFact", { targetEventId: hidden.id, reason: "Otkriveno", replacement: { text: "Kult postoji.", knowledgeKind: "observed", visibility: "player" } })]);
+    const corrId = corr.events[0]!.id;
+    const r = exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "player" });
+    const files = readAll(r.generationDir);
+    for (const [name, text] of Object.entries(files)) {
+      expect(text, name).not.toContain(hidden.id);
+      expect(text, name).not.toContain(corrId);
+    }
+    const k = JSON.parse(files["knowledge.json"]!) as { text: string; sourceEventId: string | null; createdSeq: number | null }[];
+    expect(k.find((a) => a.text === "Kult postoji.")).toMatchObject({ sourceEventId: null, createdSeq: null });
+  });
+
   it("izvoz ne mijenja bazu", () => {
     const counts = () =>
       ["DomainEvent", "JournalEntry", "KnowledgeAssertion", "Session", "BatchReceipt"].map((t) => (db.prepare(`SELECT count(*) AS n FROM "${t}"`).get() as { n: number }).n).concat(
