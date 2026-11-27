@@ -731,3 +731,26 @@ describe("Izričito nepoznat zbroj u izvoru ostaje nepoznat (Codex P1 na 5513d9a
     expect(r.report.findings.filter((f) => f.code === "total_unknown")).toHaveLength(2);
   }, 60_000);
 });
+
+describe("Postupak za ranije uvezene likove: ponovni probni uvoz iz izvora (SR-02, e0454d0)", () => {
+  it("nova generacija iz istog izvora dobiva oznake nepoznatog; prethodna generacija i izvor ostaju netaknuti", async () => {
+    const source = makeSource((d) => {
+      const f = path.join(d, "state", "character.json");
+      const c = JSON.parse(readFileSync(f, "utf8"));
+      c.savingThrows.CHA = null;
+      c.skills.Persuasion = null;
+      writeFileSync(f, JSON.stringify(c));
+    });
+    const sourceBefore = hashTree(source);
+    const first = run(source, "gen-ranija");
+    const firstBefore = hashTree(first.generationDir);
+    const second = run(source, "gen-nova");
+    expect(second.generationDir).not.toBe(first.generationDir);
+    expect(hashTree(first.generationDir)).toEqual(firstBefore);
+    expect(hashTree(source)).toEqual(sourceBefore);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(second.dbPath!, { readonly: true });
+    expect(loadState(db, "UZR-001").characters["PC-001"]!.unknownTotals).toEqual(["save:CHA", "skill:Persuasion"]);
+    db.close();
+  }, 120_000);
+});
