@@ -20,6 +20,50 @@ type PendingBatch = { body: Record<string, unknown>; label: string };
 
 const uuid = () => crypto.randomUUID();
 
+/** Ishod jednog slanja batcha; „unknown” znači da potvrda nije pročitana pa se smije ponoviti samo isti batch. */
+export type PostOutcome =
+  | { kind: "saved"; version: number }
+  | { kind: "unknown" }
+  | { kind: "busy" }
+  | { kind: "conflict"; message: string }
+  | { kind: "rejected"; message: string; code: string };
+
+const versionOf = (b: unknown): number | null => {
+  const v = b && typeof b === "object" ? (b as { stateVersionAfter?: unknown }).stateVersionAfter : undefined;
+  return typeof v === "number" && Number.isSafeInteger(v) ? v : null;
+};
+
+/**
+ * Šalje batch i tumači odgovor. Uspjeh se prijavljuje tek kad je potvrda pročitana: ako je odgovor 2xx,
+ * ali tijelo nije čitljivo ili nema verzije, potvrda se dohvaća s `GET …/batches/:batchId`; ako ni to ne
+ * uspije, ishod je nepoznat (ne „spremljeno”), a pozivatelj zadržava isti batch za ponavljanje.
+ */
+export async function postBatch(base: string, body: Record<string, unknown>, fetchImpl: typeof fetch = fetch): Promise<PostOutcome> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${base}/batches`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  } catch {
+    return { kind: "unknown" };
+  }
+  const parsed: unknown = await res.json().catch(() => null);
+  const data = (parsed && typeof parsed === "object" ? parsed : {}) as { code?: string; message?: string };
+  if (res.ok) {
+    const v = versionOf(parsed);
+    if (v !== null) return { kind: "saved", version: v };
+    try {
+      const r = await fetchImpl(`${base}/batches/${encodeURIComponent(String(body.batchId))}`, { cache: "no-store" });
+      const receipt: unknown = r.ok ? await r.json().catch(() => null) : null;
+      const rv = versionOf(receipt);
+      return rv !== null ? { kind: "saved", version: rv } : { kind: "unknown" };
+    } catch {
+      return { kind: "unknown" };
+    }
+  }
+  if (res.status === 503 && data.code === "busy") return { kind: "busy" };
+  if (res.status === 409) return { kind: "conflict", message: data.message ?? "Stanje se promijenilo." };
+  return { kind: "rejected", message: data.message ?? "Zahtjev je odbijen.", code: data.code ?? "error" };
+}
+
 /**
  * Učitavanje sheeta i slanje naredbi kroz jedini domenski put (`POST …/batches`).
  * „Spremljeno, verzija N” prikazuje se tek nakon potvrde poslužitelja; nakon prekida veze
@@ -67,37 +111,30 @@ export function useSheet(campaignId: string, characterId: string) {
   const send = useCallback(
     async (batch: PendingBatch): Promise<boolean> => {
       setSave({ kind: "saving", label: batch.label });
-      let res: Response;
-      try {
-        res = await fetch(`${base}/batches`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(batch.body),
-        });
-      } catch {
+      const out = await postBatch(base, batch.body);
+      if (out.kind === "saved") {
+        pending.current = null;
+        setSave({ kind: "saved", label: batch.label, version: out.version });
+        await reload();
+        return true;
+      }
+      if (out.kind === "unknown") {
         pending.current = batch;
         setSave({ kind: "offline", label: batch.label, message: "Veza je prekinuta. Ishod nije poznat; ponovi isti zahtjev." });
         return false;
       }
-      const body = await res.json().catch(() => ({}));
-      if (res.ok) {
-        pending.current = null;
-        setSave({ kind: "saved", label: batch.label, version: body.stateVersionAfter });
-        await reload();
-        return true;
-      }
-      if (res.status === 503 && body.code === "busy") {
+      if (out.kind === "busy") {
         pending.current = batch;
         setSave({ kind: "offline", label: batch.label, message: "Baza je zauzeta; ponovi isti zahtjev." });
         return false;
       }
       pending.current = null;
-      if (res.status === 409) {
-        setSave({ kind: "conflict", label: batch.label, message: body.message ?? "Stanje se promijenilo." });
+      if (out.kind === "conflict") {
+        setSave({ kind: "conflict", label: batch.label, message: out.message });
         await reload();
         return false;
       }
-      setSave({ kind: "rejected", label: batch.label, message: body.message ?? "Zahtjev je odbijen.", code: body.code ?? "error" });
+      setSave({ kind: "rejected", label: batch.label, message: out.message, code: out.code });
       return false;
     },
     [base, reload],

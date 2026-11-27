@@ -96,12 +96,25 @@ export function CombatTab({ sheet, submit }: TabProps) {
 
 /* -------------------------------- Oprema ------------------------------- */
 
+/**
+ * Odredište iz vrijednosti izbornika (`holder:<id>` ili `container:<id>`). Vrsta je do PRVE dvotočke,
+ * a ostatak je cijeli ID — ID-jevi predmeta i sami sadrže dvotočke (npr. `DEMO-001-PC:item:pack`).
+ */
+export function parseMoveTarget(value: string): { kind: "holder"; holderRef: string } | { kind: "container"; containerItemId: string } | null {
+  const i = value.indexOf(":");
+  if (i <= 0 || i === value.length - 1) return null;
+  const kind = value.slice(0, i);
+  const ref = value.slice(i + 1);
+  if (kind === "holder") return { kind, holderRef: ref };
+  if (kind === "container") return { kind, containerItemId: ref };
+  return null;
+}
+
 function ItemRow({ item, sheet, submit, depth }: { item: ItemNode; sheet: CharacterSheet; submit: Submit; depth: number }) {
   const [target, setTarget] = useState("");
   const move = async () => {
-    if (!target) return;
-    const [kind, ref] = target.split(":", 2) as ["holder" | "container", string];
-    const to = kind === "holder" ? { kind: "holder", holderRef: ref } : { kind: "container", containerItemId: ref };
+    const to = parseMoveTarget(target);
+    if (!to) return;
     if (await submit(`Premještanje: ${item.name}`, [{ type: "TransferItem", payload: { itemId: item.id, to } }])) setTarget("");
   };
   return (

@@ -41,3 +41,12 @@ Vlasnik je zatražio izgled prema `primjer dizajna ui.png` (snimka D&D Beyonda, 
 ## Izgled prema primjeru — odluka vlasnika (26. 11. 2026., ADR-0008)
 
 Vlasnik je izabrao izgled prema svom primjeru i zatražio izmjenu specifikacije. Ažurirani su spec §1 i §3, analiza §10, README i NEDOSLJEDNOSTI (N15); dodan ADR-0008. Sheet sada ima tamnu gornju traku (inicijali, ime, razina, Kratki/Dugi odmor, verzija), stalno vidljiv status upisa, svijetlu pozadinu, bijele okvire s crvenim rubom, atribute s modifikatorom u kutiji i vrijednošću u ovalu, pokazatelje (proficiency, hodanje, heroic inspiracija), HP okvir (Liječenje / iznos / Šteta, trenutni / maks. / privremeni), inicijativu i oklop uz radni panel, saving throwove kao oznake s vrijednošću, osjetila s vrijednošću u ovalu, tablicu vještina (PROF · ATR · VJEŠTINA · BONUS) i radni panel s crvenom oznakom aktivne kartice. Sve je vlastiti kod i CSS; nisu preuzeti slike, ilustracije, logotipi, fontovi, ikone ni CSS referentnog proizvoda. E2E 26/26, ostali testovi 158/158.
+
+## Codex i supervisor na `dd26802`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-17-01 (Codex P2): `target.split(":", 2)` reže ID spremnika s dvotočkama (`container:DEMO-001-PC:item:pack` → `DEMO-001-PC`), pa premještanje u spremnik iz sučelja ne radi | `parseMoveTarget`: vrsta do prve dvotočke, ostatak je cijeli ID; nepoznata/nepotpuna vrijednost se ne šalje | unit „parseMoveTarget”; e2e „premjesti predmet u ruksak (ID spremnika s dvotočkama)” na desktopu i 390 px |
+| SUP-17-02 (Codex P2): 2xx s nečitljivim tijelom briše čekajući batch i prikazuje „Spremljeno, verzija undefined” | `postBatch`: uspjeh tek s pročitanom verzijom; inače se potvrda dohvaća s `GET …/batches/:batchId`, a ako ni to ne uspije, ishod je nepoznat i ostaje isti batch za „Ponovi isti zahtjev” | unit „postBatch”: `json()` baca, potvrda dostupna / nedostupna / 404 / prekid veze, tijelo bez verzije, 503 busy, 409, 422 |
+
+Mutacije i dalje idu samo kroz `POST …/batches` (`executeBatch`); ponavljanje šalje isti `batchId`. Lokalno: unit 33, DB 157, e2e 28/28.

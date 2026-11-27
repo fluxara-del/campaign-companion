@@ -100,6 +100,17 @@ test("oprema iz spremnika: izvadi pa opremi", async ({ page }, info) => {
   await expect(page.getByTestId(`item-${c.pc}:item:dagger`)).toContainText("(opremljeno)");
 });
 
+test("premjesti predmet u ruksak (ID spremnika s dvotočkama)", async ({ page }, info) => {
+  const c = await open(page, info, 14);
+  await tab(page, "Oprema");
+  const sword = page.getByTestId(`item-${c.pc}:item:sword`);
+  await sword.getByLabel("Odredište za Mač").selectOption({ label: "U spremnik: Ruksak" });
+  await sword.getByRole("button", { name: "Premjesti" }).click();
+  await expectSaved(page, 1);
+  const pack = page.getByTestId(`item-${c.pc}:item:pack`);
+  await expect(pack.getByTestId(`item-${c.pc}:item:sword`)).toContainText("(u spremniku)");
+});
+
 test("transfer predmeta NPC-u (spremnik nosi sadržaj)", async ({ page }, info) => {
   const c = await open(page, info, 6);
   await tab(page, "Oprema");
