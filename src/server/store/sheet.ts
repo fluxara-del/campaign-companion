@@ -58,9 +58,10 @@ export function getCharacterSheet(db: Db, actor: Actor, campaignId: string, char
       if (!character || !derived) throw new DomainError("not_found", "Lik ne postoji u ovoj kampanji.", { characterId });
       const { stateVersion } = db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(campaignId) as { stateVersion: number };
 
-      const items = Object.values(state.items);
-      // Vlasnik predmeta koji je DM-only NPC skriva se od ostalih uloga u odgovoru (baza ostaje nepromijenjena).
+      // DM-only NPC-evi skrivaju se od ostalih uloga u odgovoru (baza ostaje nepromijenjena): predmet koji drži
+      // takav NPC izostaje na svakoj razini stabla (i unutar vidljivog spremnika), a takav vlasnik postaje null.
       const hidden = member.role === "owner" ? new Set<string>() : loadHiddenHolderRefs(db, campaignId);
+      const items = Object.values(state.items).filter((i) => i.holderRef === null || !hidden.has(i.holderRef));
       const visibleOwner = (ref: string | null) => (ref !== null && hidden.has(ref) ? null : ref);
       const tree = (parentId: string | null, holder: string | null): ItemNode[] =>
         items

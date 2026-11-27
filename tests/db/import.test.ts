@@ -754,3 +754,59 @@ describe("Postupak za ranije uvezene likove: ponovni probni uvoz iz izvora (SR-0
     db.close();
   }, 120_000);
 });
+
+describe("Kolizije ključeva i nedosljedni spremnici (Codex na e0454d0)", () => {
+  const mutated = (mutate: (c: Record<string, unknown>) => void) =>
+    run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+
+  it("„Bless” i „bless” daju jednu pripremljenu čaroliju; uvoz i izvještaj završavaju", async () => {
+    const r = mutated((c) => {
+      c.spells = ["Bless"];
+      c.preparedSpells = ["bless"];
+    });
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const spells = Object.values(loadState(db, "UZR-001").spells).filter((s) => s.name.toLowerCase() === "bless");
+    db.close();
+    expect(spells).toEqual([expect.objectContaining({ id: "PC-001:spell:bless", name: "Bless", prepared: true, alwaysPrepared: false })]);
+    expect(r.report.findings.some((f) => f.code === "spell_name_merged")).toBe(true);
+  }, 60_000);
+
+  it("dvije značajke s istim ključem ostaju zasebne, uz upozorenje", async () => {
+    const r = mutated((c) => {
+      c.features = ["Divine Sense", "divine sense"];
+    });
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const features = Object.values(loadState(db, "UZR-001").features).map((f) => [f.id, f.name]).sort();
+    db.close();
+    expect(features).toEqual([
+      ["PC-001:feature:divine-sense", "Divine Sense"],
+      ["PC-001:feature:divine-sense-2", "divine sense"],
+    ]);
+    expect(r.report.findings.filter((f) => f.code === "feature_id_collision")).toHaveLength(1);
+  }, 60_000);
+
+  it("predmet s drugim držateljem od spremnika ne dobiva vezu na spremnik", async () => {
+    const r = mutated((c) => {
+      (c.equipment as Record<string, unknown>[])[2]!.holderId = "NPC-001";
+    });
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const plocica = Object.values(loadState(db, "UZR-001").items).find((i) => i.name === "Pločica")!;
+    db.close();
+    expect(plocica).toMatchObject({ holderRef: "NPC-001", containerItemId: null });
+    expect(r.report.findings.some((f) => f.code === "container_holder_mismatch")).toBe(true);
+  }, 60_000);
+});
