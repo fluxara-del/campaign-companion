@@ -68,6 +68,7 @@ function setup(): CampaignSetup {
       { id: "pouch", name: "Torbica", quantity: 1, ownerRef: PC, holderRef: PC, location: null, containerItemId: "pack", equipped: null },
       { id: "coin", name: "Novčić", quantity: 1, ownerRef: PC, holderRef: PC, location: null, containerItemId: "pouch", equipped: null },
       { id: "secret", name: "Tajni predmet", quantity: 1, ownerRef: "NPC-TAJNI", holderRef: "NPC-TAJNI", location: null, containerItemId: null, equipped: null },
+      { id: "ring", name: "Marin prsten", quantity: 1, ownerRef: "NPC-1", holderRef: "NPC-1", location: null, containerItemId: null, equipped: null },
     ],
   };
 }
@@ -441,6 +442,41 @@ describe("Codex nalazi na PR-u #16", () => {
     expect(again.replayed).toBe(true);
     expect({ ...again, replayed: false }).toEqual(first);
     expect({ events: count("DomainEvent"), journal: count("JournalEntry"), links: count("JournalEventLink"), version: (db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(CID) as { stateVersion: number }).stateVersion }).toEqual(after);
+    expect(verifyReplay(db, CID).ok).toBe(true);
+  });
+
+  it("P1 (dd09670): inventar ne otkriva skrivenog vlasnika predmeta ni izravno ni u spremniku", () => {
+    db.prepare(`INSERT INTO "Member" (campaignId, actorId, role, createdAt) VALUES (?, 'player', 'player', '2026-11-25T00:00:00Z')`).run(CID);
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    const flat = (nodes: { id: string; ownerRef: string | null; contents: unknown[] }[]): { id: string; ownerRef: string | null }[] =>
+      nodes.flatMap((n) => [n, ...flat(n.contents as typeof nodes)]);
+    const check = () => {
+      for (const actorId of ["player", "viewer"]) {
+        const sh = getCharacterSheet(db, { actorId }, CID, PC);
+        expect(JSON.stringify(sh)).not.toMatch(/NPC-TAJNI|Tajni zlikovac/);
+        const inv = flat(sh.inventory);
+        expect(inv.find((i) => i.id === "secret")!.ownerRef).toBeNull();
+        // Vidljive reference ostaju: vlasnik lik i vidljivi NPC.
+        expect(inv.find((i) => i.id === "pack")!.ownerRef).toBe(PC);
+        expect(inv.find((i) => i.id === "ring")!.ownerRef).toBe("NPC-1");
+      }
+      const dm = flat(sheet().inventory);
+      expect(dm.find((i) => i.id === "secret")!.ownerRef).toBe("NPC-TAJNI");
+      expect(dm.find((i) => i.id === "ring")!.ownerRef).toBe("NPC-1");
+      // Čitanje lista ne mijenja vlasništvo u bazi.
+      expect(state().items.secret!.ownerRef).toBe("NPC-TAJNI");
+    };
+    run([
+      cmd("TransferItem", { itemId: "secret", to: { kind: "holder", holderRef: PC } }),
+      cmd("TransferItem", { itemId: "ring", to: { kind: "holder", holderRef: PC } }),
+    ]);
+    check();
+    const v = version;
+    // U spremniku lika.
+    run([cmd("TransferItem", { itemId: "secret", to: { kind: "container", containerItemId: "pack" } })]);
+    expect(state().items.secret).toMatchObject({ containerItemId: "pack", holderRef: PC });
+    check();
+    expect(version).toBe(v + 1);
     expect(verifyReplay(db, CID).ok).toBe(true);
   });
 
