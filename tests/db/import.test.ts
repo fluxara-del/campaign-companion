@@ -781,6 +781,22 @@ describe("Kolizije ključeva i nedosljedni spremnici (Codex na e0454d0)", () => 
     expect(r.report.findings.some((f) => f.code === "spell_name_merged")).toBe(true);
   }, 60_000);
 
+  it.each([
+    ["Bless / BLESS", { spells: ["Bless"], preparedSpells: ["BLESS"], alwaysPreparedSpells: [] }, "Bless", true, false],
+    ["višerječni naziv s višestrukim razmacima (alwaysPrepared)", { spells: ["Divine Smite"], preparedSpells: [], alwaysPreparedSpells: ["divine   SMITE"] }, "Divine Smite", true, true],
+  ] as const)("%s: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane", async (_l, lists, name, prep, always) => {
+    const r = mutated((c) => Object.assign(c, lists));
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const all = Object.values(loadState(db, "UZR-001").spells);
+    db.close();
+    const key = name.toLowerCase();
+    const matching = all.filter((sp) => sp.name.toLowerCase().replace(/\s+/g, " ") === key);
+    expect(matching).toEqual([expect.objectContaining({ name, prepared: prep, alwaysPrepared: always })]);
+    expect(all).toHaveLength(1);
+  }, 60_000);
+
   it("dvije značajke s istim ključem ostaju zasebne, uz upozorenje", async () => {
     const r = mutated((c) => {
       c.features = ["Divine Sense", "divine sense"];

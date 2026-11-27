@@ -89,6 +89,12 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 
 Kontrolna provjera: sva četiri nova testa padaju bez ispravka.
 
+## Codex i supervisor na `b2f9300`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P2: normalizacija naziva čarolija koristila je `/s+/g` (slovo s) umjesto `/s+/g`, pa `Bless`/`BLESS` daju dva zapisa | Ispravljen izraz | „Bless / BLESS …” i „višerječni naziv s višestrukim razmacima (alwaysPrepared) …”: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane; bez ispravka padaju |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):

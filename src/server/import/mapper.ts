@@ -470,7 +470,7 @@ export function buildImportPlan(
   // Čarolije i značajke: nazivi iz izvora, bez opisa (ADR-0005); razina i koncentracija nepoznate.
   const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
   // Ista čarolija napisana različito (velika/mala slova, razmaci) spaja se u jedan zapis; oznake pripremljenosti se zbrajaju.
-  const norm = (s: string) => s.trim().replace(/s+/g, " ").toLowerCase();
+  const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
   const prepared = new Set(strList(character.preparedSpells).map(norm));
   const always = new Set(strList(character.alwaysPreparedSpells).map(norm));
   const spellByKey = new Map<string, string[]>();
