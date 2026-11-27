@@ -797,6 +797,33 @@ describe("Kolizije ključeva i nedosljedni spremnici (Codex na e0454d0)", () => 
     expect(all).toHaveLength(1);
   }, 60_000);
 
+  const trio = [
+    ["Bless!", "Bless?", "Bless-2"],
+    ["Bless-2", "Bless!", "Bless?"],
+  ];
+  it.each(trio)("čarolije %s, %s, %s: tri zapisa s različitim ID-jevima, izvještaj zapisan", async (...names) => {
+    const r = mutated((c) => Object.assign(c, { spells: names, preparedSpells: [], alwaysPreparedSpells: [] }));
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const spells = Object.values(loadState(db, "UZR-001").spells);
+    db.close();
+    expect(spells.map((s) => s.name).sort()).toEqual([...names].sort());
+    expect(new Set(spells.map((s) => s.id)).size).toBe(3);
+  }, 60_000);
+  it.each(trio)("značajke %s, %s, %s: tri zapisa s različitim ID-jevima, izvještaj zapisan", async (...names) => {
+    const r = mutated((c) => Object.assign(c, { features: names }));
+    expect(r.report.status).toBe("trial");
+    expect(existsSync(path.join(r.generationDir, "report.md"))).toBe(true);
+    const { loadState } = await import("@/server/store/state-repo");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const features = Object.values(loadState(db, "UZR-001").features);
+    db.close();
+    expect(features.map((f) => f.name).sort()).toEqual([...names].sort());
+    expect(new Set(features.map((f) => f.id)).size).toBe(3);
+  }, 60_000);
+
   it("dvije značajke s istim ključem ostaju zasebne, uz upozorenje", async () => {
     const r = mutated((c) => {
       c.features = ["Divine Sense", "divine sense"];

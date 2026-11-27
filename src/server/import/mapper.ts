@@ -24,18 +24,19 @@ const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const pad = (n: number) => String(n).padStart(3, "0");
 /**
- * Stabilni jedinstveni ID-jevi: prvi zapis s danim ključem zadržava osnovni ID, sljedeći dobivaju -2, -3…
- * (redom pojave u izvoru) i upozorenje, umjesto da dva zapisa dijele primarni ključ.
+ * Stabilni jedinstveni ID-jevi: zapis dobiva osnovni ID ako je slobodan, inače prvi slobodni -2, -3…
+ * (redom pojave u izvoru) i upozorenje. Provjerava se skup svih već dodijeljenih konačnih ID-jeva,
+ * pa ni naziv koji sam završava na „-2” ne može dobiti zauzeti ID.
  */
 function uniqueIds(names: string[], base: (n: string) => string, code: string, findings: Finding[]): string[] {
-  const seen = new Map<string, number>();
+  const assigned = new Set<string>();
   return names.map((n) => {
     const b = base(n);
-    const k = (seen.get(b) ?? 0) + 1;
-    seen.set(b, k);
-    if (k === 1) return b;
-    findings.push({ code, severity: "warning", message: `Naziv „${n}” daje isti ključ kao raniji zapis; spremljen zasebno kao ${b}-${k}.` });
-    return `${b}-${k}`;
+    let id = b;
+    for (let k = 2; assigned.has(id); k++) id = `${b}-${k}`;
+    assigned.add(id);
+    if (id !== b) findings.push({ code, severity: "warning", message: `Naziv „${n}” daje već zauzet ključ; spremljen zasebno kao ${id}.` });
+    return id;
   });
 }
 

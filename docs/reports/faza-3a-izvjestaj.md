@@ -95,6 +95,12 @@ Kontrolna provjera: sva četiri nova testa padaju bez ispravka.
 |---|---|---|
 | P2: normalizacija naziva čarolija koristila je `/s+/g` (slovo s) umjesto `/\s+/g` (razmak), pa `Bless`/`BLESS` daju dva zapisa | Ispravljen izraz | „Bless / BLESS …” i „višerječni naziv s višestrukim razmacima (alwaysPrepared) …”: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane; bez ispravka padaju |
 
+## Codex i supervisor na `5f1f6ce` / `a47484e`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P2: `uniqueIds` broji ponavljanja osnovnog ključa, ali ne pamti dodijeljene ID-jeve (`Bless!`, `Bless?`, `Bless-2` → dvaput `bless-2`, uvoz pada na primarnom ključu) | Vodi se skup svih dodijeljenih konačnih ID-jeva; svaki kandidat (i osnovni ID) provjerava se prije dodjele | čarolije i značajke, redoslijedi `Bless!, Bless?, Bless-2` i `Bless-2, Bless!, Bless?`: tri zapisa s različitim ID-jevima nakon ponovnog čitanja, izvještaj zapisan; bez ispravka padaju |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):
