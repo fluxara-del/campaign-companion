@@ -4,6 +4,7 @@ import type { DomainEventBody } from "@/domain/events";
 import { applyEvent, ReplayDivergenceError } from "@/domain/reducer";
 import { SNAPSHOT_FORMAT, type CampaignState } from "@/domain/state";
 import type { Db } from "./connection";
+import { verifyJournalProjections } from "./journal-projection";
 import { loadState } from "./state-repo";
 
 export function snapshotHash(state: CampaignState): string {
@@ -117,6 +118,9 @@ function verifyReplayInSnapshot(db: Db, campaignId: string, opts: { afterEventsR
   const liveHash = snapshotHash(loadState(db, campaignId));
   const replayHash = snapshotHash(state);
   if (liveHash !== replayHash) problems.push("Hash živog stanja razlikuje se od replaya.");
+
+  // Faza 4: dnevnik, znanje i sesije moraju odgovarati projekciji ponovno generiranoj iz događaja.
+  problems.push(...verifyJournalProjections(db, campaignId).problems);
 
   return {
     ok: problems.length === 0,

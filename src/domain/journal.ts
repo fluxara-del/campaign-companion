@@ -60,5 +60,26 @@ export function describeEvent(e: DomainEventBody): string {
       return e.payload.after ? `Opremljen predmet ${e.payload.name}.` : `Skinut predmet ${e.payload.name}.`;
     case "RestCompleted":
       return `${e.payload.kind === "long" ? "Dugi" : "Kratki"} odmor potvrđen: ${e.payload.pools.length} resursa obnovljeno${e.payload.hp ? `, HP ${e.payload.hp.before} → ${e.payload.hp.after}` : ""}.`;
+    case "JournalNoteRevised":
+      return `Bilješka izmijenjena (revizija ${e.payload.revisionBefore} → ${e.payload.revisionAfter})${e.payload.title ? `: ${e.payload.title}` : ""}.`;
+    case "WorldFactRecorded":
+      return `${KNOWLEDGE_HR[e.payload.knowledgeKind]}: ${e.payload.text}`;
+    case "FactCorrected": {
+      const r = e.payload.replacement;
+      const what = r ? ` Novo (${KNOWLEDGE_HR[r.knowledgeKind].toLowerCase()}): ${r.text}` : e.payload.assertionId ? " Tvrdnja je povučena." : "";
+      return `Ispravka događaja #${e.payload.targetSeq}: ${e.payload.reason}.${what}`;
+    }
+    case "SessionStarted":
+      return `Početak sesije ${e.payload.number}${e.payload.title ? `: ${e.payload.title}` : ""} (verzija ${e.payload.startVersion}).`;
+    case "SessionEnded":
+      return `Kraj sesije ${e.payload.number} (verzija ${e.payload.endVersion}).`;
   }
 }
+
+export const KNOWLEDGE_HR = {
+  observed: "Viđeno",
+  reported: "Prijavljeno",
+  rumor: "Glasina",
+  inferred: "Zaključak",
+  canon: "Kanon",
+} as const;

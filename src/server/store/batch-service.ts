@@ -5,9 +5,10 @@ import { DomainError } from "@/domain/errors";
 import type { EventDraft } from "@/domain/events";
 import { describeEvent } from "@/domain/journal";
 import { applyEvent } from "@/domain/reducer";
-import { decide } from "@/domain/rules";
+import { applyToJournalContext, decide } from "@/domain/rules";
 import { cloneState } from "@/domain/state";
 import { isBusyError, isUniqueViolation, type Db } from "./connection";
+import { applyJournalProjections, assignSessions, loadJournalContext } from "./journal-store";
 import { loadHiddenHolderRefs, loadKnownHolderRefs, loadState, persistChanges } from "./state-repo";
 
 export type Actor = { actorId: string };
@@ -110,11 +111,14 @@ function runInTransaction(
   const before = loadState(db, campaignId);
   const knownHolderRefs = loadKnownHolderRefs(db, campaignId, role);
   const hiddenHolderRefs = loadHiddenHolderRefs(db, campaignId);
+  const journal = loadJournalContext(db, campaignId, actor.actorId, role, campaign.stateVersion + 1);
+  const openSessionAtStart = journal.openSession?.id ?? null;
   const working = cloneState(before);
   const drafts: { commandId: string; draft: EventDraft }[] = [];
   batch.commands.forEach((command, commandIndex) => {
-    for (const draft of decide(working, command, { commandIndex, newId: opts.newId, knownHolderRefs, hiddenHolderRefs })) {
+    for (const draft of decide(working, command, { commandIndex, newId: opts.newId, knownHolderRefs, hiddenHolderRefs, journal })) {
       applyEvent(working, draft);
+      applyToJournalContext(journal, draft);
       drafts.push({ commandId: command.commandId, draft });
     }
   });
@@ -125,7 +129,8 @@ function runInTransaction(
   const actorKind = actorKindFor(role);
   const stateVersionAfter = campaign.stateVersion + 1;
   const firstSeq = campaign.lastEventSeq + 1;
-  const events = drafts.map((d, i) => ({ ...d, id: opts.newId(), seq: firstSeq + i }));
+  const sessions = assignSessions(openSessionAtStart, drafts.map((d) => d.draft));
+  const events = drafts.map((d, i) => ({ ...d, id: opts.newId(), seq: firstSeq + i, sessionId: sessions[i]! }));
   const lastSeq = events.at(-1)!.seq;
 
   persistChanges(db, before, working);
@@ -181,8 +186,8 @@ function runInTransaction(
   batch.commands.forEach((c, position) => insCommand.run(campaignId, c.commandId, batchId, position));
 
   const insEvent = db.prepare(
-    `INSERT INTO "DomainEvent" (id, campaignId, seq, batchId, commandId, type, schemaVersion, payloadJson, actorKind, actorId, sourceRef, occurredAt, worldTime, visibility, knowledgeKind)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
+    `INSERT INTO "DomainEvent" (id, campaignId, seq, batchId, commandId, type, schemaVersion, payloadJson, actorKind, actorId, sourceRef, occurredAt, worldTime, visibility, knowledgeKind, sessionId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
   );
   for (const e of events) {
     insEvent.run(
@@ -199,6 +204,7 @@ function runInTransaction(
       committedAt,
       e.draft.visibility,
       e.draft.knowledgeKind,
+      e.sessionId,
     );
   }
 
@@ -225,6 +231,8 @@ function runInTransaction(
     );
     insLink.run(campaignId, e.draft.payload.journalEntryId, e.id);
   }
+
+  applyJournalProjections(db, campaignId, events, committedAt);
 
   const upd = db
     .prepare(`UPDATE "Campaign" SET stateVersion = ?, lastEventSeq = ? WHERE id = ? AND stateVersion = ?`)

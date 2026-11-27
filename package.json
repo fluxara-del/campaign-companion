@@ -28,6 +28,7 @@
     "postinstall": "prisma generate",
     "import:trial": "tsx scripts/import/trial-import.ts",
     "dev:seed": "tsx scripts/dev/seed-demo.ts",
+    "export": "tsx scripts/export/export.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

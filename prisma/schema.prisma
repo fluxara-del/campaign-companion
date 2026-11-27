@@ -45,6 +45,8 @@ model Campaign {
   items      ItemInstance[]
   entities   EntityRecord[]
   documents  SourceDocument[]
+  sessions   Session[]
+  knowledge  KnowledgeAssertion[]
 }
 
 model Member {
@@ -190,6 +192,8 @@ model DomainEvent {
   /// player | dm | shared
   visibility    String
   knowledgeKind String?
+  /// Sesija otvorena u trenutku batcha (Faza 4); null izvan sesije i za starije događaje.
+  sessionId     String?
 
   campaign Campaign           @relation(fields: [campaignId], references: [id], onDelete: Restrict)
   receipt  BatchReceipt       @relation(fields: [campaignId, batchId], references: [campaignId, batchId], onDelete: Restrict)
@@ -457,21 +461,68 @@ model Concentration {
 
 /// Zahtjev za bacanje (npr. concentration save) koji čeka igračev rezultat.
 model RollRequest {
-  id          String  @id
-  campaignId  String
-  characterId String
+  id                      String  @id
+  campaignId              String
+  characterId             String
   /// concentration_save
-  kind        String
-  dc          Int
-  reason      String
+  kind                    String
+  dc                      Int
+  reason                  String
   /// pending | resolved | cancelled
-  status      String
-  total       Int?
-  outcome     String?
+  status                  String
+  total                   Int?
+  outcome                 String?
   /// Instanca koncentracije na koju se zahtjev odnosi
   concentrationInstanceId String?
 
   character Character @relation(fields: [campaignId, characterId], references: [campaignId, id], onDelete: Restrict)
 
   @@unique([campaignId, id])
+}
+
+/// Sesija igre (Faza 4): projekcija događaja SessionStarted/SessionEnded. Najviše jedna otvorena po kampanji.
+model Session {
+  id           String
+  campaignId   String
+  number       Int
+  title        String?
+  /// open | closed
+  status       String
+  startVersion Int
+  endVersion   Int?
+  startedSeq   Int
+  endedSeq     Int?
+  startedAt    String
+  endedAt      String?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, id])
+  @@unique([campaignId, number])
+}
+
+/// Tvrdnja o svijetu (Faza 4): projekcija WorldFactRecorded/FactCorrected. Izvorni događaj se nikad ne mijenja.
+model KnowledgeAssertion {
+  id                 String
+  campaignId         String
+  /// npc | quest | location | world
+  subjectKind        String
+  subjectId          String?
+  text               String
+  /// observed | reported | rumor | inferred | canon
+  knowledgeKind      String
+  /// player | dm | shared
+  visibility         String
+  sourceRef          String?
+  /// active | superseded | retracted
+  status             String
+  sourceEventId      String
+  createdSeq         Int
+  correctedByEventId String?
+  supersededById     String?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  @@id([campaignId, id])
+  @@index([campaignId, subjectKind, subjectId])
 }

@@ -151,6 +151,55 @@ export type RestCompleted = {
   };
 };
 
+// --- Faza 4 ---
+
+export type JournalNoteRevised = {
+  type: "JournalNoteRevised";
+  payload: { journalEntryId: string; revisionBefore: number; revisionAfter: number; title: string | null; text: string };
+};
+
+export type WorldFactRecorded = {
+  type: "WorldFactRecorded";
+  payload: {
+    assertionId: string;
+    subjectKind: "npc" | "quest" | "location" | "world";
+    subjectId: string | null;
+    text: string;
+    knowledgeKind: KnowledgeKind;
+    sourceRef: string | null;
+  };
+};
+
+export type FactCorrected = {
+  type: "FactCorrected";
+  payload: {
+    targetEventId: string;
+    targetSeq: number;
+    targetType: string;
+    reason: string;
+    /** Tvrdnja koju ispravka zamjenjuje ili povlači (ako je izvor bio WorldFactRecorded). */
+    assertionId: string | null;
+    replacement: {
+      assertionId: string;
+      subjectKind: "npc" | "quest" | "location" | "world";
+      subjectId: string | null;
+      text: string;
+      knowledgeKind: KnowledgeKind;
+      visibility: Visibility;
+    } | null;
+  };
+};
+
+export type SessionStarted = {
+  type: "SessionStarted";
+  payload: { sessionId: string; number: number; title: string | null; startVersion: number };
+};
+
+export type SessionEnded = {
+  type: "SessionEnded";
+  payload: { sessionId: string; number: number; endVersion: number };
+};
+
 export type DomainEventBody =
   | DamageApplied
   | HealingApplied
@@ -172,7 +221,15 @@ export type DomainEventBody =
   | ConditionRemoved
   | ItemMoved
   | ItemEquippedSet
-  | RestCompleted;
+  | RestCompleted
+  | JournalNoteRevised
+  | WorldFactRecorded
+  | FactCorrected
+  | SessionStarted
+  | SessionEnded;
+
+/** Događaji Faze 4 ne mijenjaju mehaničko stanje lika (dnevnik, znanje, sesije). */
+export const NON_MECHANICAL_EVENTS = ["JournalNoteAppended", "JournalNoteRevised", "WorldFactRecorded", "FactCorrected", "SessionStarted", "SessionEnded"] as const;
 
 export type EventType = DomainEventBody["type"];
 
