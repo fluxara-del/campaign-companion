@@ -7,7 +7,7 @@ import { applyEvent, ReplayDivergenceError } from "@/domain/reducer";
 import { decide } from "@/domain/rules";
 import type { CampaignState } from "@/domain/state";
 
-const ctx = { commandIndex: 0, newId: () => "id-1", knownHolderRefs: new Set(["PC"]) };
+const ctx = { commandIndex: 0, newId: () => "id-1", knownHolderRefs: new Set(["PC"]), hiddenHolderRefs: new Set<string>() };
 const intentRef = { kind: "player_choice", messageId: "m1" } as const;
 
 function state(): CampaignState {

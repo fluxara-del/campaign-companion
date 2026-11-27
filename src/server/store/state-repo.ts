@@ -127,6 +127,21 @@ export function loadKnownHolderRefs(db: Db, campaignId: string, role: string): S
   return new Set(ids.map((r) => r.id));
 }
 
+/** NPC-evi kampanje vidljivi samo DM-u (neovisno o ulozi čitatelja). */
+export function loadHiddenHolderRefs(db: Db, campaignId: string): Set<string> {
+  const ids = db
+    .prepare(`SELECT id FROM "EntityRecord" WHERE campaignId = ? AND kind = 'npc' AND visibility NOT IN ('player', 'shared')`)
+    .all(campaignId) as { id: string }[];
+  return new Set(ids.map((r) => r.id));
+}
+
+/** Unosi dnevnika koje uloga smije vidjeti, redom nastanka. */
+export function loadVisibleJournal(db: Db, campaignId: string, role: string): { id: string; kind: string; title: string; text: string; visibility: string }[] {
+  return db
+    .prepare(`SELECT id, kind, title, text, visibility FROM "JournalEntry" WHERE campaignId = ? AND ${visibilityClause(role)} ORDER BY createdAt, rowid`)
+    .all(campaignId) as { id: string; kind: string; title: string; text: string; visibility: string }[];
+}
+
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const keysEqual = (a: object, b: object) => Object.keys(a).sort().join("|") === Object.keys(b).sort().join("|");
 

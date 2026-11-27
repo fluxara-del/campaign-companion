@@ -623,7 +623,51 @@ describe("Uvezeni zbrojevi ostaju jednaki zabilježenima (Codex P2 na 0682a58)",
     for (const [skill, total] of Object.entries(src.skills as Record<string, number>)) {
       expect(d.skills[skill]!.value, `skill ${skill}`).toBe(total);
     }
-    if (src.spellSaveDC !== undefined) expect(d.spellSaveDc.value).toBe(src.spellSaveDC);
-    expect(d.spellAttack.value).toBe(src.spellAttackBonus);
+    expect(d.spellSaveDc.value).toBe(src.spellSaveDC ?? null);
+    expect(d.spellAttack.value).toBe(src.spellAttackBonus ?? null);
+  }, 60_000);
+});
+
+describe("Pojedinačno zabilježen spell DC ili napad (supervisor na 20e7c6a)", () => {
+  const cases: [string, (c: Record<string, unknown>) => void, number | null, number | null][] = [
+    ["samo DC, bez razine i bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+      delete c.spellAttackBonus;
+    }, 12, null],
+    ["samo napad, bez razine i bonusa", (c) => {
+      c.level = null;
+      delete c.proficiencyBonus;
+      delete c.spellSaveDC;
+    }, null, 4],
+    ["samo napad, uz poznat bonus", (c) => {
+      delete c.spellSaveDC;
+    }, null, 4],
+  ];
+  it.each(cases)("%s: zabilježeni zbroj sačuvan, drugi ostaje nepoznat", async (_l, mutate, dc, atk) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const st = loadState(db, "UZR-001");
+    db.close();
+    const d = deriveSheet(st, "PC-001")!;
+    expect(st.characters["PC-001"]!.spellcastingAbility).toBeNull();
+    expect(d.spellSaveDc.value).toBe(dc);
+    expect(d.spellAttack.value).toBe(atk);
+    // Sačuvana vrijednost je override s razlogom i izvorom, a ne izračun.
+    const kept = dc !== null ? d.spellSaveDc : d.spellAttack;
+    expect(kept.override?.reason).toMatch(/atribut čaranja nije moguće izvesti/);
+    expect(kept.override?.source).toBeTruthy();
+    expect((dc !== null ? d.spellAttack : d.spellSaveDc).override).toBeFalsy();
+    expect(r.report.findings.some((f) => f.code === "spellcasting_unknown")).toBe(true);
   }, 60_000);
 });

@@ -7,7 +7,7 @@ import type { Db } from "@/server/store/connection";
 import { createCampaign, type CampaignSetup } from "@/server/store/campaign-setup";
 import { verifyReplay } from "@/server/store/replay";
 import { getCharacterSheet } from "@/server/store/sheet";
-import { loadState } from "@/server/store/state-repo";
+import { loadState, loadVisibleJournal } from "@/server/store/state-repo";
 import { createTemplate, freshDb } from "./helpers";
 
 const CID = "SHEET-1";
@@ -322,6 +322,62 @@ describe("Codex nalazi na PR-u #16", () => {
     // Vlasnik (DM) smije predmet dati DM-only NPC-u.
     run([cmd("TransferItem", { itemId: "dagger", to: { kind: "holder", holderRef: "NPC-TAJNI" } })]);
     expect(state().items.dagger!.holderRef).toBe("NPC-TAJNI");
+  });
+
+  it("P1 (20e7c6a): transfer od i prema DM-only NPC-u vidi samo DM; javni transfer ostaje vidljiv", () => {
+    db.prepare(`INSERT INTO "Member" (campaignId, actorId, role, createdAt) VALUES (?, 'player', 'player', '2026-11-25T00:00:00Z')`).run(CID);
+    db.prepare(`INSERT INTO "EntityRecord" (id, campaignId, kind, name, status, visibility, dataJson, sourceRef) VALUES ('NPC-TAJNI', ?, 'npc', 'Tajni zlikovac', NULL, 'dm', '{}', 't')`).run(CID);
+    const leaks = (role: string) => JSON.stringify(loadVisibleJournal(db, CID, role)).match(/NPC-TAJNI|Tajni zlikovac/g) ?? [];
+    const hiddenEvents = () =>
+      db.prepare(`SELECT visibility, payloadJson FROM "DomainEvent" WHERE campaignId = ? AND type = 'ItemMoved' AND payloadJson LIKE '%NPC-TAJNI%'`).all(CID) as { visibility: string }[];
+
+    // Torbica (s novčićem) ostaje liku; ruksak s bodežom ide skrivenom NPC-u, uz javnu promjenu u istom batchu.
+    run([cmd("TransferItem", { itemId: "pouch", to: { kind: "holder", holderRef: PC } })]);
+    run([
+      cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: "NPC-TAJNI" } }),
+      cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null }),
+    ]);
+    expect(state().items.dagger!.holderRef).toBe("NPC-TAJNI");
+    expect(hiddenEvents()).toHaveLength(2);
+    // Javni dio istog batcha igrač i dalje vidi.
+    expect(loadVisibleJournal(db, CID, "player").some((j) => /HP|štet/i.test(j.text))).toBe(true);
+    expect(hiddenEvents().every((e) => e.visibility === "dm")).toBe(true);
+    expect(leaks("player")).toEqual([]);
+    expect(leaks("viewer")).toEqual([]);
+
+    // Igrač ne smije dirati predmet ni spremnik skrivenog NPC-a, a pogreška ga ne otkriva.
+    for (const to of [{ kind: "holder", holderRef: PC }, { kind: "location", location: "Pod" }]) {
+      let err: DomainError | null = null;
+      try {
+        run([cmd("TransferItem", { itemId: "dagger", to })], { actorId: "player" });
+      } catch (e) {
+        err = e as DomainError;
+      }
+      expect(err?.code).toBe("rule_violation");
+      expect(JSON.stringify({ m: err?.message, d: err?.details })).not.toMatch(/NPC-TAJNI|Tajni zlikovac/);
+    }
+    expect(code(() => run([cmd("TransferItem", { itemId: "pouch", to: { kind: "container", containerItemId: "pack" } })], { actorId: "player" }))).toBe("rule_violation");
+
+    // Od skrivenog NPC-a natrag liku: i dalje samo DM.
+    run([cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: PC } })]);
+    expect(state().items.dagger!.holderRef).toBe(PC);
+    expect(hiddenEvents()).toHaveLength(4);
+    expect(hiddenEvents().every((e) => e.visibility === "dm")).toBe(true);
+    expect(leaks("player")).toEqual([]);
+    expect(leaks("viewer")).toEqual([]);
+
+    // Vlasnik zadržava puni trag: oba DM-only unosa s četiri pomaka.
+    const dmEntries = loadVisibleJournal(db, CID, "owner").filter((j) => j.visibility === "dm");
+    expect(dmEntries).toHaveLength(2);
+    expect(dmEntries.flatMap((j) => j.text.split("\n")).filter((l) => l.startsWith("Predmet"))).toHaveLength(4);
+
+    // Javni transfer (vidljivom NPC-u) igrač i promatrač vide.
+    run([cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: "NPC-1" } })]);
+    for (const role of ["player", "viewer"]) {
+      expect(loadVisibleJournal(db, CID, role).filter((j) => j.text.includes("NPC-1"))).toHaveLength(1);
+      expect(leaks(role)).toEqual([]);
+    }
+    expect(verifyReplay(db, CID).ok).toBe(true);
   });
 
   it("P2: stari concentration save ne djeluje na novu koncentraciju (druga čarolija)", () => {
