@@ -350,12 +350,17 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
           .filter((x) => x.containerItemId === rootId)
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .flatMap((x) => [x.id, ...descendants(x.id)]);
-      for (const id of descendants(itemId)) {
-        const d = getOwn(state.items, id)!;
+      const contents = descendants(itemId).map((id) => getOwn(state.items, id)!);
+      // Cijelo stablo provjerava se prije ikakve promjene: nedosljedan stari zapis (predmet skrivenog NPC-a u
+      // vidljivom spremniku) uloga koja tog NPC-a ne vidi ne može premjestiti; pogreška ne imenuje sadržaj.
+      if (contents.some((d) => hiddenFromActor(ctx, d.holderRef))) violation(ctx, "Premještanje ovog predmeta nije moguće.", { itemId });
+      for (const d of contents) {
         const dBefore = { holderRef: d.holderRef, containerItemId: d.containerItemId, location: d.location, equipped: d.equipped };
         const dAfter = { holderRef: after.holderRef, containerItemId: d.containerItemId, location: after.location, equipped: false };
         if (JSON.stringify(dBefore) !== JSON.stringify(dAfter)) {
-          events.push({ ...moved, type: "ItemMoved", payload: { itemId: id, name: d.name, before: dBefore, after: dAfter, viaContainerOf: itemId } });
+          // Vidljivost se određuje i za svaki predmet sadržaja prema njegovu vlastitom starom i novom držatelju.
+          const dHidden = touchesHidden || [dBefore.holderRef, dAfter.holderRef].some((r) => r !== null && ctx.hiddenHolderRefs.has(r));
+          events.push({ ...mechanical, visibility: dHidden ? "dm" : mechanical.visibility, type: "ItemMoved", payload: { itemId: d.id, name: d.name, before: dBefore, after: dAfter, viaContainerOf: itemId } });
         }
       }
       return events;
