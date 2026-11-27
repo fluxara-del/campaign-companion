@@ -93,7 +93,7 @@ Kontrolna provjera: sva četiri nova testa padaju bez ispravka.
 
 | Nalaz | Rješenje | Test |
 |---|---|---|
-| P2: normalizacija naziva čarolija koristila je `/s+/g` (slovo s) umjesto `/s+/g`, pa `Bless`/`BLESS` daju dva zapisa | Ispravljen izraz | „Bless / BLESS …” i „višerječni naziv s višestrukim razmacima (alwaysPrepared) …”: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane; bez ispravka padaju |
+| P2: normalizacija naziva čarolija koristila je `/s+/g` (slovo s) umjesto `/\s+/g` (razmak), pa `Bless`/`BLESS` daju dva zapisa | Ispravljen izraz | „Bless / BLESS …” i „višerječni naziv s višestrukim razmacima (alwaysPrepared) …”: jedan zapis nakon uvoza i ponovnog čitanja, oznake sačuvane; bez ispravka padaju |
 
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
