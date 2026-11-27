@@ -101,6 +101,14 @@ Kontrolna provjera: sva četiri nova testa padaju bez ispravka.
 |---|---|---|
 | P2: `uniqueIds` broji ponavljanja osnovnog ključa, ali ne pamti dodijeljene ID-jeve (`Bless!`, `Bless?`, `Bless-2` → dvaput `bless-2`, uvoz pada na primarnom ključu) | Vodi se skup svih dodijeljenih konačnih ID-jeva; svaki kandidat (i osnovni ID) provjerava se prije dodjele | čarolije i značajke, redoslijedi `Bless!, Bless?, Bless-2` i `Bless-2, Bless!, Bless?`: tri zapisa s različitim ID-jevima nakon ponovnog čitanja, izvještaj zapisan; bez ispravka padaju |
 
+## Supervisor na `f353b8c`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: premještanje vidljivog spremnika koji (u nedosljednom starom zapisu) sadrži predmet DM-only NPC-a mijenja držatelja tog predmeta i objavljuje njegovo ime u dnevniku igrača | `TransferItem` provjerava cijelo stablo prije promjene: uloga koja ne vidi NPC-a dobiva atomsko odbijanje s neutralnom porukom („Premještanje ovog predmeta nije moguće.”, bez naziva i ID-ja sadržaja). Za vlasnika se vidljivost određuje za svaki predmet sadržaja prema njegovu starom i novom držatelju | prošireni „P1 (e0454d0) …”: igračev `executeBatch` odbijen, držatelji, verzija, događaji i dnevnik nepromijenjeni, pogreška bez skrivenog naziva/ID-ja; običan ugniježđeni sadržaj i dalje putuje; vlasnikov prijenos: pomak skrivenog predmeta samo `dm`. Bez ispravka test pada |
+
+Semantika SR-01 je nepromijenjena: ovlasti i potvrda batcha provjeravaju se prije pravila, pa odbijanje ne stvara potvrdu ni događaje.
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):

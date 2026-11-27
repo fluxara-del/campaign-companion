@@ -512,6 +512,38 @@ describe("Codex nalazi na PR-u #16", () => {
     }
     const dmPack = (sheet().inventory as N[]).find((i) => i.id === "pack")!;
     expect(dmPack.contents.map((c) => c.id).sort()).toEqual(["dagger", "pouch", "spy-note"]);
+
+    // P1 (f353b8c): igrač premješta taj ruksak kroz executeBatch — atomsko odbijanje bez otkrivanja sadržaja.
+    const snapshot = () => ({
+      holders: Object.values(state().items).map((i) => [i.id, i.holderRef, i.containerItemId]).sort(),
+      version: (db.prepare(`SELECT stateVersion FROM "Campaign" WHERE id = ?`).get(CID) as { stateVersion: number }).stateVersion,
+      events: (db.prepare(`SELECT count(*) AS n FROM "DomainEvent" WHERE campaignId = ?`).get(CID) as { n: number }).n,
+      journal: (db.prepare(`SELECT count(*) AS n FROM "JournalEntry" WHERE campaignId = ?`).get(CID) as { n: number }).n,
+    });
+    const before = snapshot();
+    let err: DomainError | null = null;
+    try {
+      run([cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: "NPC-1" } })], { actorId: "player" });
+    } catch (e) {
+      err = e as DomainError;
+    }
+    expect(err?.code).toBe("rule_violation");
+    expect(JSON.stringify({ m: err?.message, d: err?.details })).not.toMatch(/NPC-TAJNI|Tajni zlikovac|spy-note|Šifrirana/);
+    expect(snapshot()).toEqual(before);
+
+    // Obični ugniježđeni sadržaj i dalje putuje sa spremnikom (torbica s novčićem).
+    run([cmd("TransferItem", { itemId: "pouch", to: { kind: "holder", holderRef: "NPC-1" } })], { actorId: "player" });
+    expect(state().items.coin).toMatchObject({ holderRef: "NPC-1", containerItemId: "pouch" });
+
+    // Vlasnik smije premjestiti ruksak; pomak skrivenog predmeta vidi samo DM.
+    run([cmd("TransferItem", { itemId: "pack", to: { kind: "holder", holderRef: "NPC-1" } })]);
+    const spyEvents = db.prepare(`SELECT visibility FROM "DomainEvent" WHERE campaignId = ? AND type = 'ItemMoved' AND payloadJson LIKE '%spy-note%'`).all(CID);
+    expect(spyEvents).toEqual([{ visibility: "dm" }]);
+    for (const role of ["player", "viewer"]) {
+      const j = JSON.stringify(loadVisibleJournal(db, CID, role));
+      expect(j).not.toMatch(/NPC-TAJNI|Tajni zlikovac|spy-note|Šifrirana/);
+      expect(j).toContain("Ruksak");
+    }
   });
 
   it("P2: stari concentration save ne djeluje na novu koncentraciju (druga čarolija)", () => {
