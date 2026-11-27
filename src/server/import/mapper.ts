@@ -393,6 +393,8 @@ export function buildImportPlan(
       reason: "Razlika zabilježene inicijative i DEX modifikatora (npr. značajka lika).",
     });
     findings.push({ code: "initiative_bonus_imported", severity: "info", message: `Inicijativa ${recordedInit} uz DEX ${dexMod >= 0 ? "+" : ""}${dexMod}: razlika ${recordedInit - dexMod} sačuvana kao bonus s izvorom.` });
+  } else if (recordedInit !== null && dexMod === null) {
+    importedOverride("initiative", recordedInit, "Uvezena vrijednost; DEX nije poznat pa se inicijativa ne može izračunati.", "state/character.json#initiative");
   }
 
   // Atribut čaranja: jednoznačno iz zabilježenog DC-a i napada, inače nepoznat.

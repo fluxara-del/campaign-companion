@@ -671,3 +671,29 @@ describe("Pojedinačno zabilježen spell DC ili napad (supervisor na 20e7c6a)", 
     expect(r.report.findings.some((f) => f.code === "spellcasting_unknown")).toBe(true);
   }, 60_000);
 });
+
+describe("Zabilježena inicijativa uz nepoznat DEX (Codex P2 na 20e7c6a)", () => {
+  const cases: [string, (c: Record<string, unknown>) => void][] = [
+    ["DEX: null", (c) => ((c.abilityScores as Record<string, unknown>).DEX = null)],
+    ["DEX izostavljen", (c) => delete (c.abilityScores as Record<string, unknown>).DEX],
+  ];
+  it.each(cases)("%s: inicijativa nakon uvoza i ponovnog učitavanja = 2, kao override s razlogom", async (_l, mutate) => {
+    const r = run(
+      makeSource((d) => {
+        const f = path.join(d, "state", "character.json");
+        const c = JSON.parse(readFileSync(f, "utf8"));
+        mutate(c);
+        writeFileSync(f, JSON.stringify(c));
+      }),
+    );
+    expect(r.report.status).toBe("trial");
+    const { loadState } = await import("@/server/store/state-repo");
+    const { deriveSheet } = await import("@/domain/derived");
+    const db = openDatabase(r.dbPath!, { readonly: true });
+    const d = deriveSheet(loadState(db, "UZR-001"), "PC-001")!;
+    db.close();
+    expect(d.initiative.value).toBe(2);
+    expect(d.initiative.override?.reason).toMatch(/DEX nije poznat/);
+    expect(d.initiative.override?.source).toBeTruthy();
+  }, 60_000);
+});

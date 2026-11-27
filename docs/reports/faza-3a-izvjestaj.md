@@ -60,6 +60,14 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 | P1: transfer DM-only NPC-u stvara `ItemMoved` vidljiv igračima, a dnevnik projekcije (uvijek `player`) otkriva ID NPC-a | Vidljivost transfera određuje se prema polaznom i odredišnom držatelju: ako je bilo koji DM-only NPC, događaj i događaji sadržaja spremnika imaju `dm`. Projekcija dnevnika dijeli se po vidljivosti, pa javni dio istog batcha ostaje vidljiv. Za ulogu koja ne vidi NPC-a predmet ili spremnik kod njega ponaša se kao nepostojeći. | „P1 (20e7c6a): transfer od i prema DM-only NPC-u …”: oba smjera, sadržaj spremnika, igrač i promatrač bez ID-a i imena, vlasnik puni trag, javni transfer vidljiv, replay |
 | P2 (dopuna): samo zapisan DC | Ponašanje iz `20e7c6a` | „Pojedinačno zabilježen spell DC ili napad”: samo DC, samo napad (sa i bez poznatog bonusa); sačuvana vrijednost je override s razlogom, drugi zbroj ostaje nepoznat |
 
+## Codex i supervisor na `4649fbd`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P2: `SetEquipped` zaobilazi provjeru skrivenog držatelja (igrač može promijeniti `equipped: null` → `false` i objaviti naziv predmeta) | Ista provjera kao u `TransferItem`: za ulogu koja ne vidi NPC-a predmet kod njega je „nepostojeći”; vlasnikova promjena takvog predmeta ima vidljivost `dm` | „P2 (4649fbd): SetEquipped …”: isti odgovor kao za nepostojeći predmet, bez promjene stanja, verzije, događaja i dnevnika; vlasnikova promjena samo u DM zapisu; replay |
+| P2: zabilježena inicijativa gubi se kad DEX nije poznat | Zbroj se čuva kao override s razlogom i izvorom | „Zabilježena inicijativa uz nepoznat DEX”: `DEX: null` i izostavljen DEX → 2 |
+| SR-01: idempotencija batcha s javnim i DM zapisom | Bez promjene koda | „SR-01: ponovljeni batch …”: isti odgovor i ID-jevi, bez novih događaja, zapisa, poveznica i verzije |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):
