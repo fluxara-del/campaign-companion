@@ -142,6 +142,33 @@ test("nepoznat ishod: radnje zaključane dok se ne ponovi isti zahtjev", async (
   await expect(page.getByRole("button", { name: "Šteta" })).toBeEnabled();
 });
 
+test("nepoznat ishod iz dijaloga: dijalog se zatvara, ponavljanje je dostupno (i na 390 px)", async ({ page }, info) => {
+  await open(page, info, 16);
+  let drop = true;
+  const posted: string[] = [];
+  await page.route("**/api/campaigns/*/batches", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    posted.push(JSON.parse(route.request().postData() ?? "{}").batchId);
+    if (drop) {
+      drop = false;
+      return route.abort("connectionreset");
+    }
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "Promijeni Karizma" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Nova vrijednost (1–30)").fill("16");
+  await dialog.getByLabel(/Razlog/).fill("Ability Score Improvement");
+  await dialog.getByRole("button", { name: "Spremi promjenu" }).click();
+  const status = page.getByTestId("save-status");
+  await expect(status).toHaveAttribute("data-state", "offline");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await status.getByRole("button", { name: "Ponovi isti zahtjev" }).click();
+  await expectSaved(page, 1);
+  expect(posted).toEqual([posted[0], posted[0]]);
+  await expect(page.getByTestId("ability-CHA-mod")).toHaveText("+3");
+});
+
 test("transfer predmeta NPC-u (spremnik nosi sadržaj)", async ({ page }, info) => {
   const c = await open(page, info, 6);
   await tab(page, "Oprema");

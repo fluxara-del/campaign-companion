@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { Actor } from "@/server/store/batch-service";
 
 /**
@@ -35,9 +36,11 @@ function boundToLoopback(): boolean {
   const norm = (h: string) => h.trim().replace(/^\[|\]$/g, "").toLowerCase();
   const listen = process.env.KDZ_LISTEN_HOST;
   if (!listen || !LOOPBACK.has(norm(listen))) return false;
-  // Samostalni Next.js poslužitelj (Docker) veže se na HOSTNAME; ne-loopback vrijednost isključuje lokalni način.
-  const hostname = process.env.HOSTNAME;
-  return !hostname || LOOPBACK.has(norm(hostname));
+  // Next.js poslužitelj u slici veže se na HOSTNAME (npr. 0.0.0.0); takva adresa isključuje lokalni način.
+  // Na nekim sustavima (Fedora, RHEL) HOSTNAME je ime računala, a ne bind adresa, pa se gleda samo
+  // kad je to IP literal ili zamjenska adresa.
+  const hostname = process.env.HOSTNAME ? norm(process.env.HOSTNAME) : "";
+  return !(isIP(hostname) !== 0 && !LOOPBACK.has(hostname));
 }
 
 export function resolveActor(req: Request): Actor {

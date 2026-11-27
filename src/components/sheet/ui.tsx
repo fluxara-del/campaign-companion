@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export function Button({ className, variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "quiet" | "danger" }) {
@@ -67,8 +67,19 @@ export function TextField({ label, value, onChange, required }: { label: string;
   );
 }
 
-/** Nativni modalni dijalog: zadržava fokus unutar sebe, a pri zatvaranju vraća fokus na okidač. */
+/** Postoji nerazriješeni batch: otvoreni dijalozi se zatvaraju da bi „Ponovi isti zahtjev” bio dostupan. */
+export const UnresolvedBatchContext = createContext(false);
+
+/**
+ * Nativni modalni dijalog: zadržava fokus unutar sebe, a pri zatvaranju vraća fokus na okidač.
+ * Kad batch postane nerazriješen, dijalog se sam zatvara (modal bi inače prekrio status s ponavljanjem,
+ * a njegove kontrole su zaključane).
+ */
 export function Dialog({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: ReactNode }) {
+  const unresolved = useContext(UnresolvedBatchContext);
+  useEffect(() => {
+    if (unresolved && open) onClose();
+  }, [unresolved, open, onClose]);
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const titleId = useId();

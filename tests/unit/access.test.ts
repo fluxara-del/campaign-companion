@@ -63,7 +63,12 @@ describe("pristup API-ju bez autentifikacije (O5)", () => {
     process.env.KDZ_LISTEN_HOST = "127.0.0.1";
     process.env.HOSTNAME = "0.0.0.0";
     expect(status(spoofed)).toBe(503);
+    process.env.HOSTNAME = "::";
+    expect(status(spoofed)).toBe(503);
     process.env.HOSTNAME = "127.0.0.1";
+    expect(status(spoofed)).toBe(200);
+    // SUP-17-06: na Fedori/RHEL-u HOSTNAME je ime računala, ne bind adresa.
+    process.env.HOSTNAME = "fedora-radna";
     expect(status(spoofed)).toBe(200);
   });
 

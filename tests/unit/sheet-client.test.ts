@@ -57,9 +57,10 @@ describe("BatchSender: nerazriješeni batch blokira nove radnje (SUP-17-04)", ()
   const setup = (f: ReturnType<typeof vi.fn>) => {
     const states: { kind: string; message?: string }[] = [];
     const blocked: boolean[] = [];
+    const unresolved: boolean[] = [];
     const reload = vi.fn().mockResolvedValue(null);
-    const s = new BatchSender(BASE, { onState: (x) => states.push(x), onBlocked: (b) => blocked.push(b), reload, fetchImpl: f as unknown as typeof fetch });
-    return { s, states, blocked };
+    const s = new BatchSender(BASE, { onState: (x) => states.push(x), onLock: (l) => (blocked.push(l.busy), unresolved.push(l.unresolved)), reload, fetchImpl: f as unknown as typeof fetch });
+    return { s, states, blocked, unresolved };
   };
 
   it("nepoznat ishod pa nova radnja: ništa se ne šalje, stari batch ostaje i ponavlja se s istim batchId", async () => {
@@ -91,5 +92,35 @@ describe("BatchSender: nerazriješeni batch blokira nove radnje (SUP-17-04)", ()
     expect(s.unresolved).not.toBeNull();
     expect(await s.retry()).toBe(false);
     expect(s.unresolved).toBeNull();
+  });
+
+  it("SUP-17-04: dva istodobna submit — drugi se odbija dok prvi čeka; „unknown” pa 409 na ponavljanju ne gubi ništa", async () => {
+    let releaseFirst!: (r: Response) => void;
+    const firstPending = new Promise<Response>((resolve) => (releaseFirst = resolve));
+    const f = vi
+      .fn()
+      .mockImplementationOnce(() => firstPending.then(() => Promise.reject(new TypeError("network"))))
+      .mockResolvedValueOnce(jsonRes(409, { code: "stale_version", message: "Zastarjelo." }));
+    const { s, blocked, unresolved } = setup(f);
+    const first = s.submit(mk("b-1", "Šteta"));
+    // Rezervacija je sinkrona: kontrole su zaključane prije nego što POST odgovori.
+    expect(blocked.at(-1)).toBe(true);
+    expect(s.locked).toBe(true);
+    const second = await s.submit(mk("b-2", "Liječenje"));
+    expect(second).toBe(false);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(await s.retry()).toBe(false);
+    expect(f).toHaveBeenCalledTimes(1);
+
+    releaseFirst(jsonRes(200, {}));
+    expect(await first).toBe(false);
+    expect(s.unresolved?.body.batchId).toBe("b-1");
+    expect(unresolved.at(-1)).toBe(true);
+    // b-2 nikad nije poslan ni zapamćen; ponavlja se samo b-1, a 409 ga razrješava.
+    expect(await s.retry()).toBe(false);
+    expect(f.mock.calls.map((c) => JSON.parse(c[1].body).batchId)).toEqual(["b-1", "b-1"]);
+    expect(s.unresolved).toBeNull();
+    expect(s.locked).toBe(false);
+    expect(blocked.at(-1)).toBe(false);
   });
 });

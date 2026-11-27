@@ -4,6 +4,7 @@ import { useState } from "react";
 import { SaveStatus } from "./SaveStatus";
 import { CombatTiles, HpBox, ProficienciesCard, SavesCard, SensesCard, SkillsCard, SummaryStrip } from "./summary";
 import { AbilitiesTab, CombatTab, EquipmentTab, MagicTab, NotesTab, RestDialog } from "./tabs";
+import { UnresolvedBatchContext } from "./ui";
 import { useSheet } from "./useSheet";
 
 const TABS = [
@@ -22,7 +23,7 @@ type TabId = (typeof TABS)[number]["id"];
  * Promjena kartice ne šalje ništa poslužitelju.
  */
 export function CharacterSheetApp({ campaignId, characterId }: { campaignId: string; characterId: string }) {
-  const { sheet, loadError, save, submit, retry, dismiss, blocked } = useSheet(campaignId, characterId);
+  const { sheet, loadError, save, submit, retry, dismiss, blocked, unresolved } = useSheet(campaignId, characterId);
   const [tab, setTab] = useState<TabId>("borba");
   const [rest, setRest] = useState<"short" | "long" | null>(null);
 
@@ -51,6 +52,7 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
   const headerBtn = "oznaka inline-flex min-h-11 items-center rounded-md border border-okvir px-3 text-white hover:bg-okvir";
 
   return (
+    <UnresolvedBatchContext.Provider value={unresolved}>
     <div className="sheet-theme min-h-dvh pb-24 md:pb-6">
       <header className="bg-traka text-white shadow-md">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
@@ -94,7 +96,7 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
 
       <div className="mx-auto max-w-[1400px] space-y-3 px-4 pt-3">
         {/* Dok prethodni batch nije razriješen, radnje su zaključane (ponavlja se isti batch u statusu). */}
-        <fieldset disabled={blocked} data-testid="sheet-actions" aria-describedby={blocked ? "unresolved-note" : undefined} className="flex min-w-0 flex-col gap-3 xl:flex-row">
+        <fieldset disabled={blocked} data-testid="sheet-actions" aria-describedby={unresolved ? "unresolved-note" : undefined} className="flex min-w-0 flex-col gap-3 xl:flex-row">
           <div className="flex-1">
             <SummaryStrip sheet={sheet} submit={submit} />
           </div>
@@ -102,7 +104,7 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
             <HpBox sheet={sheet} submit={submit} />
           </div>
         </fieldset>
-        {blocked ? (
+        {unresolved ? (
           <p id="unresolved-note" className="text-sm text-okvir-tamni">
             Radnje su zaključane dok se ne ponovi prethodni zahtjev („Ponovi isti zahtjev”).
           </p>
@@ -172,5 +174,6 @@ export function CharacterSheetApp({ campaignId, characterId }: { campaignId: str
         </ul>
       </nav>
     </div>
+    </UnresolvedBatchContext.Provider>
   );
 }

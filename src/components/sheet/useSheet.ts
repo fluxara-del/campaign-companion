@@ -71,14 +71,19 @@ export const UNRESOLVED_MESSAGE = "Prethodni zahtjev nije razriješen. Ponovi is
  * baza zauzeta), nova radnja se ne šalje: najprije se mora ponoviti isti batch (isti batchId), koji
  * poslužitelj idempotentno potvrdi ili odbije. Tako nova radnja ne može prepisati ni izgubiti stari batch.
  */
+export type SendLock = { busy: boolean; unresolved: boolean };
+
 export class BatchSender {
+  /** Batch čiji ishod nije potvrđen (nepoznat ili zauzeta baza); ponavlja se samo on. */
   private pending: PendingBatch | null = null;
+  /** Batch koji se upravo šalje; rezervira se sinkrono, prije prvog `await`. */
+  private inFlight: PendingBatch | null = null;
 
   constructor(
     private readonly base: string,
     private readonly deps: {
       onState: (s: SaveState) => void;
-      onBlocked: (blocked: boolean) => void;
+      onLock: (lock: SendLock) => void;
       reload: () => Promise<unknown>;
       fetchImpl?: typeof fetch;
     },
@@ -88,13 +93,21 @@ export class BatchSender {
     return this.pending;
   }
 
-  private setPending(b: PendingBatch | null) {
-    this.pending = b;
-    this.deps.onBlocked(b !== null);
+  /** Nova radnja nije dopuštena dok se batch šalje ili dok postoji nerazriješeni batch. */
+  get locked(): boolean {
+    return this.inFlight !== null || this.pending !== null;
   }
 
-  /** Nova radnja; odbija se dok postoji nerazriješeni batch. */
+  private emitLock() {
+    this.deps.onLock({ busy: this.locked, unresolved: this.pending !== null });
+  }
+
+  /** Nova radnja; odbija se dok se drugi batch šalje ili dok postoji nerazriješeni batch. */
   async submit(batch: PendingBatch): Promise<boolean> {
+    if (this.inFlight) {
+      this.deps.onState({ kind: "saving", label: this.inFlight.label });
+      return false;
+    }
     if (this.pending) {
       this.deps.onState({ kind: "offline", label: this.pending.label, message: UNRESOLVED_MESSAGE });
       return false;
@@ -102,15 +115,20 @@ export class BatchSender {
     return this.send(batch);
   }
 
-  /** Ponavlja nerazriješeni batch (isti batchId). */
+  /** Ponavlja nerazriješeni batch (isti batchId); ništa ako se nešto već šalje. */
   async retry(): Promise<boolean> {
-    return this.pending ? this.send(this.pending) : false;
+    if (this.inFlight || !this.pending) return false;
+    return this.send(this.pending);
   }
 
   private async send(batch: PendingBatch): Promise<boolean> {
     const { onState, reload, fetchImpl } = this.deps;
+    // Sinkrona rezervacija: drugo slanje koje stigne dok ovaj zahtjev čeka bit će odbijeno.
+    this.inFlight = batch;
+    this.emitLock();
     onState({ kind: "saving", label: batch.label });
     const out = await postBatch(this.base, batch.body, fetchImpl ?? fetch);
+    this.inFlight = null;
     if (out.kind === "saved") {
       this.setPending(null);
       onState({ kind: "saved", label: batch.label, version: out.version });
@@ -135,6 +153,11 @@ export class BatchSender {
     onState({ kind: "rejected", label: batch.label, message: out.message, code: out.code });
     return false;
   }
+
+  private setPending(b: PendingBatch | null) {
+    this.pending = b;
+    this.emitLock();
+  }
 }
 
 /**
@@ -146,7 +169,7 @@ export function useSheet(campaignId: string, characterId: string) {
   const [sheet, setSheet] = useState<CharacterSheet | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
-  const [blocked, setBlocked] = useState(false);
+  const [lock, setLock] = useState<SendLock>({ busy: false, unresolved: false });
   const base = `/api/campaigns/${encodeURIComponent(campaignId)}`;
 
   const reload = useCallback(async () => {
@@ -181,13 +204,13 @@ export function useSheet(campaignId: string, characterId: string) {
     };
   }, [base, characterId]);
 
-  const sender = useMemo(() => new BatchSender(base, { onState: setSave, onBlocked: setBlocked, reload }), [base, reload]);
+  const sender = useMemo(() => new BatchSender(base, { onState: setSave, onLock: setLock, reload }), [base, reload]);
 
   /** Šalje jednu ili više naredbi kao jedan atomski batch. */
   const submit = useCallback(
     async (label: string, commands: CommandInput[]): Promise<boolean> => {
       if (!sheet) return false;
-      if (sender.unresolved) return sender.submit({ body: {}, label });
+      if (sender.locked) return sender.submit({ body: {}, label });
       setSave({ kind: "checking", label });
       const body = {
         schemaVersion: 1,
@@ -214,5 +237,6 @@ export function useSheet(campaignId: string, characterId: string) {
     if (!sender.unresolved) setSave({ kind: "idle" });
   }, [sender]);
 
-  return { sheet, loadError, save, submit, retry, reload, dismiss, blocked };
+  /** `blocked`: radnje zaključane (slanje u tijeku ili nerazriješen batch); `unresolved`: čeka se ponavljanje. */
+  return { sheet, loadError, save, submit, retry, reload, dismiss, blocked: lock.busy, unresolved: lock.unresolved };
 }

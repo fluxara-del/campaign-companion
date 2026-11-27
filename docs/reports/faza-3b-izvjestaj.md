@@ -59,3 +59,13 @@ Mutacije i dalje idu samo kroz `POST …/batches` (`executeBatch`); ponavljanje 
 | SUP-17-04 (Codex P2): nova radnja nakon „nepoznatog” ishoda prepisivala je ili brisala nerazriješeni batch | `BatchSender`: dok postoji nerazriješeni batch (nepoznat ishod ili zauzeta baza), nova radnja se ne šalje i prikazuje se poruka; kontrole lista zaključane su (`fieldset disabled`) dok se ne ponovi isti zahtjev (isti `batchId`); obavijest se ne može zatvoriti prije razrješenja | unit „BatchSender”: nepoznat ishod pa nova radnja (ništa se ne šalje, isti batch se ponavlja), busy pa 409; e2e „nepoznat ishod: radnje zaključane …” (desktop i 390 px) |
 
 Lokalno: unit 37, e2e 30/30.
+
+## Supervisor na `4b22449`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-17-04 (ponovno, Codex P2): batch se bilježio kao nerazriješen tek nakon `await`, pa je druga radnja tijekom čekanja prolazila, a „unknown” pa 409 brisao prvi batch | `BatchSender` rezervira batch „u letu” sinkrono, prije prvog `await`; kontrole su zaključane i tijekom slanja; nova radnja i ponavljanje odbijaju se dok se šalje ili dok postoji nerazriješeni batch | unit „dva istodobna submit …”: drugi se odbija dok prvi čeka, šalje se samo `b-1`, „unknown” pa 409 na ponavljanju razrješava bez gubitka |
+| SUP-17-05 (Codex P2): dijalog unutar zaključanog `fieldset`a ostaje otvoren, „Odustani” je onemogućen, a modal prekriva „Ponovi isti zahtjev” (na dodiru nema izlaza) | Otvoreni dijalog se sam zatvara kad batch postane nerazriješen (`UnresolvedBatchContext`), pa je status s ponavljanjem dostupan | e2e „nepoznat ishod iz dijaloga …” (desktop i 390 px): dijalog nestaje, ponavljanje šalje isti `batchId`, spremljeno |
+| SUP-17-06 (P3): na Fedori/RHEL-u `HOSTNAME` je ime računala, pa je local-owner vraćao 503 i uz ispravan pokretač | `HOSTNAME` se uzima u obzir samo kad je IP literal ili zamjenska adresa (`0.0.0.0`, `::`) | unit: `HOSTNAME=fedora-radna` → dopušteno; `0.0.0.0` i `::` → 503 |
+
+Lokalno: unit 38, e2e 32/32.
