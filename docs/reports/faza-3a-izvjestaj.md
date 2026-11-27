@@ -53,6 +53,13 @@ Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijedn
 |---|---|---|
 | P2: bez razine i proficiency bonusa (ili bez DC-a) gube se zabilježeni spell DC i napad | Kad se atribut čaranja ne može izvesti, svaki zabilježeni zbroj (DC, napad) čuva se kao override s razlogom; nalaz `spellcasting_unknown` | „Uvezeni zbrojevi …”: nepoznata razina bez bonusa; napad bez DC-a |
 
+## Codex i supervisor na `20e7c6a`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: transfer DM-only NPC-u stvara `ItemMoved` vidljiv igračima, a dnevnik projekcije (uvijek `player`) otkriva ID NPC-a | Vidljivost transfera određuje se prema polaznom i odredišnom držatelju: ako je bilo koji DM-only NPC, događaj i događaji sadržaja spremnika imaju `dm`. Projekcija dnevnika dijeli se po vidljivosti, pa javni dio istog batcha ostaje vidljiv. Za ulogu koja ne vidi NPC-a predmet ili spremnik kod njega ponaša se kao nepostojeći. | „P1 (20e7c6a): transfer od i prema DM-only NPC-u …”: oba smjera, sadržaj spremnika, igrač i promatrač bez ID-a i imena, vlasnik puni trag, javni transfer vidljiv, replay |
+| P2 (dopuna): samo zapisan DC | Ponašanje iz `20e7c6a` | „Pojedinačno zabilježen spell DC ili napad”: samo DC, samo napad (sa i bez poznatog bonusa); sačuvana vrijednost je override s razlogom, drugi zbroj ostaje nepoznat |
+
 ## SR-02: zamijenjena razvojna migracija Faze 3
 
 Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):

@@ -12,6 +12,8 @@ export type DecideContext = {
   newId: () => string;
   /** ID-jevi likova i NPC-eva kampanje (dopušteni držatelji predmeta). */
   knownHolderRefs: ReadonlySet<string>;
+  /** NPC-evi vidljivi samo DM-u (za svaku ulogu isti skup); transfer koji ih dotiče vidi samo DM. */
+  hiddenHolderRefs: ReadonlySet<string>;
 };
 
 function violation(ctx: DecideContext, message: string, details: Record<string, unknown> = {}): never {
@@ -313,14 +315,16 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
     case "TransferItem": {
       const { itemId, to } = command.payload;
       const it = getOwn(state.items, itemId);
-      if (!it) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
+      // Predmet kod NPC-a skrivenog od ove uloge ponaša se kao nepostojeći (ne otkriva držatelja).
+      const hiddenFromActor = (ref: string | null) => ref !== null && ctx.hiddenHolderRefs.has(ref) && !ctx.knownHolderRefs.has(ref);
+      if (!it || hiddenFromActor(it.holderRef)) violation(ctx, "Predmet ne postoji u ovoj kampanji.", { itemId });
       let after: ItemPlacement;
       if (to.kind === "holder") {
         if (!ctx.knownHolderRefs.has(to.holderRef)) violation(ctx, "Držatelj nije poznat lik ni NPC.", { holderRef: to.holderRef });
         after = { holderRef: to.holderRef, containerItemId: null, location: null, equipped: false };
       } else if (to.kind === "container") {
         const box = getOwn(state.items, to.containerItemId);
-        if (!box) violation(ctx, "Spremnik ne postoji.", { containerItemId: to.containerItemId });
+        if (!box || hiddenFromActor(box.holderRef)) violation(ctx, "Spremnik ne postoji.", { containerItemId: to.containerItemId });
         // Spremnik ne smije biti sam predmet ni bilo što unutar njega (ciklus).
         for (let cur: string | null = box.id, guard = 0; cur; guard++) {
           if (cur === itemId || guard > 1000) violation(ctx, "Premještanje bi stvorilo ciklus spremnika.", { itemId, containerItemId: box.id });
@@ -332,7 +336,10 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
       }
       const before = { holderRef: it.holderRef, containerItemId: it.containerItemId, location: it.location, equipped: it.equipped };
       if (JSON.stringify(before) === JSON.stringify(after)) violation(ctx, "Predmet je već na odredištu.");
-      const events: EventDraft[] = [{ ...mechanical, type: "ItemMoved", payload: { itemId, name: it.name, before, after, viaContainerOf: null } }];
+      // Transfer od ili prema DM-only NPC-u vidi samo DM (događaj, dnevnik i sadržaj spremnika).
+      const touchesHidden = [before.holderRef, after.holderRef].some((r) => r !== null && ctx.hiddenHolderRefs.has(r));
+      const moved = { ...mechanical, visibility: touchesHidden ? ("dm" as const) : mechanical.visibility };
+      const events: EventDraft[] = [{ ...moved, type: "ItemMoved", payload: { itemId, name: it.name, before, after, viaContainerOf: null } }];
       // Sadržaj spremnika putuje sa spremnikom (držatelj i lokacija), ostaje u istom spremniku.
       const descendants = (rootId: string): string[] =>
         Object.values(state.items)
@@ -344,7 +351,7 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
         const dBefore = { holderRef: d.holderRef, containerItemId: d.containerItemId, location: d.location, equipped: d.equipped };
         const dAfter = { holderRef: after.holderRef, containerItemId: d.containerItemId, location: after.location, equipped: false };
         if (JSON.stringify(dBefore) !== JSON.stringify(dAfter)) {
-          events.push({ ...mechanical, type: "ItemMoved", payload: { itemId: id, name: d.name, before: dBefore, after: dAfter, viaContainerOf: itemId } });
+          events.push({ ...moved, type: "ItemMoved", payload: { itemId: id, name: d.name, before: dBefore, after: dAfter, viaContainerOf: itemId } });
         }
       }
       return events;
