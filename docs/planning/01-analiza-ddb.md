@@ -155,6 +155,8 @@ Za preglednost se točan uspješni tok navodi i bez skraćenih naziva: mobilni p
 
 Originalnost se ostvaruje informacijskom arhitekturom oko kampanje i potvrđenih događaja, vlastitom tipografijom/bojama/ikonama i zasebnim pravilima interakcije. Ne preuzimaju se dekorativni okviri, kompozicija, pozadine, ilustracije, logotipi, tekstovi pravila ili CSS reference. Snimke služe isključivo analizi, nisu predlošci niti asseti aplikacije.
 
+> **Izmjena 26. 11. 2026. (odluka vlasnika, ADR-0008):** za character sheet vlasnik je odlučio da izgled (raspored, boje, okviri) slijedi njegov referentni primjer. I dalje se ne preuzimaju slike, ilustracije, logotipi, fontovi, ikone, CSS ni tekstovi; izgled se izrađuje vlastitim kodom.
+
 ## 11. Pokrivenost i granice
 
 | Traženo područje | Status | Što ostaje nepoznato |

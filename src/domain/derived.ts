@@ -69,6 +69,8 @@ export type CharacterSheetDerived = {
   saves: Record<Ability, Derived & { proficient: boolean }>;
   skills: Record<string, Derived & { ability: Ability; proficiency: "none" | "proficient" | "expertise" }>;
   passivePerception: Derived;
+  passiveInsight: Derived;
+  passiveInvestigation: Derived;
   initiative: Derived;
   armorClass: Derived;
   speed: Derived;
@@ -141,6 +143,20 @@ export function deriveSheet(state: CampaignState, characterId: string): Characte
       : { value: 10 + perception.value, parts: [{ label: "Osnova", value: 10 }, { label: "Perception", value: perception.value }], override: null, unknownBecause: null },
   );
 
+  const passive = (skill: string): Derived => {
+    const sk = skills[skill]!;
+    return finalize(
+      state,
+      c,
+      `passive:${skill}`,
+      sk.value === null
+        ? unknown(`${skill} nije poznat.`)
+        : { value: 10 + sk.value, parts: [{ label: "Osnova", value: 10 }, { label: skill, value: sk.value }], override: null, unknownBecause: null },
+    );
+  };
+  const passiveInsight = passive("Insight");
+  const passiveInvestigation = passive("Investigation");
+
   const dex = mod("DEX");
   const initiative = finalize(
     state,
@@ -190,6 +206,8 @@ export function deriveSheet(state: CampaignState, characterId: string): Characte
     saves,
     skills,
     passivePerception,
+    passiveInsight,
+    passiveInvestigation,
     initiative,
     armorClass,
     speed,

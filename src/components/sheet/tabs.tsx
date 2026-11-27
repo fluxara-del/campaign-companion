@@ -1,0 +1,457 @@
+"use client";
+
+import { useState } from "react";
+import type { CharacterSheet, ItemNode } from "@/server/store/sheet";
+import { DerivedValue } from "./Derived";
+import { Button, Dialog, NumberField, Section, TextField } from "./ui";
+import type { CommandInput } from "./useSheet";
+
+export type Submit = (label: string, commands: CommandInput[]) => Promise<boolean>;
+type TabProps = { sheet: CharacterSheet; submit: Submit };
+
+
+const toInt = (v: string): number | null => (/^-?\d+$/.test(v.trim()) ? Number(v) : null);
+
+/* -------------------------------- Borba -------------------------------- */
+
+export function CombatTab({ sheet, submit }: TabProps) {
+  const c = sheet.character;
+  const [error, setError] = useState<string | null>(null);
+  const [roll, setRoll] = useState("");
+  const [cond, setCond] = useState({ name: "", source: "" });
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {error ? (
+        <p role="alert" className="text-sm text-upozorenje lg:col-span-2">
+          {error}
+        </p>
+      ) : null}
+
+      <Section title="Koncentracija">
+        {sheet.concentration ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p data-testid="concentration">Koncentrira: {sheet.concentration.spellName}</p>
+            <Button variant="quiet" onClick={() => submit("Kraj koncentracije", [{ type: "EndConcentration", payload: { characterId: c.id, reason: "Igrač završava koncentraciju" } }])}>
+              Završi koncentraciju
+            </Button>
+          </div>
+        ) : (
+          <p data-testid="concentration">Nema koncentracije.</p>
+        )}
+        {sheet.pendingRolls.map((r) => (
+          <div key={r.id} className="mt-3 rounded-md border border-bronca p-3" data-testid="pending-roll">
+            <p className="text-sm">
+              {r.reason}: baci concentration save i unesi ukupni rezultat. DC {r.dc}.
+            </p>
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <NumberField label="Rezultat bacanja" value={roll} onChange={setRoll} id={`roll-${r.id}`} />
+              <Button
+                onClick={async () => {
+                  const t = toInt(roll);
+                  if (t === null) return setError("Unesi ukupni rezultat bacanja.");
+                  if (await submit(`Concentration save ${t}`, [{ type: "ResolveRollRequest", payload: { rollRequestId: r.id, total: t }, intent: "roll_result" }])) setRoll("");
+                }}
+              >
+                Upiši rezultat
+              </Button>
+            </div>
+          </div>
+        ))}
+      </Section>
+
+      <Section title="Uvjeti">
+        <ul className="space-y-2" data-testid="conditions">
+          {sheet.conditions.length === 0 ? <li className="text-sm">Nema aktivnih uvjeta.</li> : null}
+          {sheet.conditions.map((x) => (
+            <li key={x.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-current/15 p-2">
+              <span>
+                <strong>{x.name}</strong> · {x.source}
+                {x.durationNote ? ` · ${x.durationNote}` : ""}
+              </span>
+              <Button variant="quiet" onClick={() => submit(`Uklanjanje ${x.name}`, [{ type: "RemoveCondition", payload: { conditionId: x.id, reason: "Ručno uklonjeno" } }])}>
+                Ukloni
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <TextField label="Uvjet" value={cond.name} onChange={(v) => setCond({ ...cond, name: v })} />
+          <TextField label="Izvor" value={cond.source} onChange={(v) => setCond({ ...cond, source: v })} />
+          <Button
+            variant="quiet"
+            onClick={async () => {
+              if (!cond.name.trim() || !cond.source.trim()) return setError("Uvjet i izvor su obavezni.");
+              if (await submit(`Uvjet ${cond.name}`, [{ type: "ApplyCondition", payload: { characterId: c.id, name: cond.name.trim(), source: cond.source.trim(), durationNote: null } }]))
+                setCond({ name: "", source: "" });
+            }}
+          >
+            Dodaj uvjet
+          </Button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+/* -------------------------------- Oprema ------------------------------- */
+
+/**
+ * Odredište iz vrijednosti izbornika (`holder:<id>` ili `container:<id>`). Vrsta je do PRVE dvotočke,
+ * a ostatak je cijeli ID — ID-jevi predmeta i sami sadrže dvotočke (npr. `DEMO-001-PC:item:pack`).
+ */
+export function parseMoveTarget(value: string): { kind: "holder"; holderRef: string } | { kind: "container"; containerItemId: string } | null {
+  const i = value.indexOf(":");
+  if (i <= 0 || i === value.length - 1) return null;
+  const kind = value.slice(0, i);
+  const ref = value.slice(i + 1);
+  if (kind === "holder") return { kind, holderRef: ref };
+  if (kind === "container") return { kind, containerItemId: ref };
+  return null;
+}
+
+function ItemRow({ item, sheet, submit, depth }: { item: ItemNode; sheet: CharacterSheet; submit: Submit; depth: number }) {
+  const [target, setTarget] = useState("");
+  const move = async () => {
+    const to = parseMoveTarget(target);
+    if (!to) return;
+    if (await submit(`Premještanje: ${item.name}`, [{ type: "TransferItem", payload: { itemId: item.id, to } }])) setTarget("");
+  };
+  return (
+    <li className="rounded-md border border-current/15 p-2" style={{ marginLeft: depth * 12 }} data-testid={`item-${item.id}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span>
+          <strong>{item.name}</strong>
+          {item.quantity !== null ? ` ×${item.quantity}` : " ×?"}
+          {item.equipped ? <span className="ml-2 text-xs text-zvono">(opremljeno)</span> : null}
+          {item.containerItemId ? <span className="ml-2 text-xs">(u spremniku)</span> : null}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {!item.containerItemId ? (
+            <Button variant="quiet" onClick={() => submit(item.equipped ? `Skidanje: ${item.name}` : `Opremanje: ${item.name}`, [{ type: "SetEquipped", payload: { itemId: item.id, equipped: !item.equipped } }])}>
+              {item.equipped ? "Skini" : "Opremi"}
+            </Button>
+          ) : null}
+          <label className="flex items-center gap-1 text-sm">
+            <span className="sr-only">Odredište za {item.name}</span>
+            <select value={target} onChange={(e) => setTarget(e.target.value)} className="min-h-11 rounded-md border border-current/30 bg-transparent px-2" aria-label={`Odredište za ${item.name}`}>
+              <option value="">Premjesti…</option>
+              {sheet.holders.map((h) => (
+                <option key={h.id} value={`holder:${h.id}`}>
+                  Kod: {h.name}
+                </option>
+              ))}
+              {sheet.containers
+                .filter((x) => x.id !== item.id)
+                .map((x) => (
+                  <option key={x.id} value={`container:${x.id}`}>
+                    U spremnik: {x.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <Button variant="quiet" onClick={move} disabled={!target}>
+            Premjesti
+          </Button>
+        </div>
+      </div>
+      {item.contents.length > 0 ? (
+        <ul className="mt-2 space-y-2">
+          {item.contents.map((c) => (
+            <ItemRow key={c.id} item={c} sheet={sheet} submit={submit} depth={depth + 1} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+export function EquipmentTab({ sheet, submit }: TabProps) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <Section title="Inventar">
+        {sheet.inventory.length === 0 ? <p className="text-sm">Lik trenutačno ne drži nijedan predmet.</p> : null}
+        <ul className="space-y-2">
+          {sheet.inventory.map((i) => (
+            <ItemRow key={i.id} item={i} sheet={sheet} submit={submit} depth={0} />
+          ))}
+        </ul>
+      </Section>
+      <Section title="Novac">
+        <ul className="space-y-2">
+          {sheet.wallets.map((w) => (
+            <li key={w.id} className="rounded-md border border-current/15 p-2" data-testid={`wallet-${w.purpose}`}>
+              <p className="text-sm">
+                {w.label} ({w.purpose === "personal" ? "osobni" : "namjenski grupni"})
+              </p>
+              <p className="font-mono text-lg">{w.amountMinor === null ? "nepoznato" : `${w.amountMinor / 100} GP`}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </div>
+  );
+}
+
+/* --------------------------------- Magija ------------------------------ */
+
+export function MagicTab({ sheet, submit }: TabProps) {
+  const [casting, setCasting] = useState<string | null>(null);
+  const [cost, setCost] = useState("");
+  const [details, setDetails] = useState<{ id: string; level: string; conc: string } | null>(null);
+  const spell = sheet.spells.find((s) => s.id === casting) ?? null;
+  const slots = sheet.resources.filter((r) => /^spell-slot-\d$/.test(r.resourceKey));
+  const freeUses = sheet.resources.filter((r) => !/^spell-slot-/.test(r.resourceKey));
+
+  const cast = async () => {
+    if (!spell) return;
+    const c = cost === "none" ? { kind: "none" } : cost.startsWith("slot:") ? { kind: "slot", resourcePoolId: cost.slice(5) } : { kind: "free_use", resourcePoolId: cost.slice(5) };
+    if (await submit(`Bacanje: ${spell.name}`, [{ type: "ResolveCast", payload: { spellSelectionId: spell.id, cost: c } }])) setCasting(null);
+  };
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <Section title="Čarolije">
+        <ul className="space-y-2">
+          {sheet.spells.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-current/15 p-2" data-testid={`spell-${s.id}`}>
+              <span>
+                <strong>{s.name}</strong> · razina {s.spellLevel ?? "?"}
+                {s.concentration ? " · koncentracija" : s.concentration === null ? " · koncentracija ?" : ""}
+                <span className="ml-2 text-xs">{s.alwaysPrepared ? "(uvijek pripremljena)" : s.prepared ? "(pripremljena)" : "(nije pripremljena)"}</span>
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {!s.alwaysPrepared ? (
+                  <Button variant="quiet" onClick={() => submit(s.prepared ? `Odpripremi: ${s.name}` : `Pripremi: ${s.name}`, [{ type: "SetSpellPrepared", payload: { spellSelectionId: s.id, prepared: !s.prepared } }])}>
+                    {s.prepared ? "Odpripremi" : "Pripremi"}
+                  </Button>
+                ) : null}
+                <Button variant="quiet" onClick={() => setDetails({ id: s.id, level: s.spellLevel === null ? "" : String(s.spellLevel), conc: s.concentration === null ? "" : s.concentration ? "da" : "ne" })}>
+                  Podaci
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCasting(s.id);
+                    setCost(s.spellLevel === 0 ? "none" : "");
+                  }}
+                  disabled={!s.prepared && !s.alwaysPrepared}
+                >
+                  Baci
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Section>
+      <Section title="Spell slotovi">
+        <div className="mb-3 grid gap-2">
+          <DerivedValue label="Spell save DC" value={sheet.derived.spellSaveDc} asModifier={false} testId="spell-dc" />
+          <DerivedValue label="Spell attack" value={sheet.derived.spellAttack} testId="spell-attack" />
+        </div>
+        <ul className="space-y-2">
+          {slots.map((r) => (
+            <li key={r.id} className="flex justify-between rounded-md border border-current/15 p-2" data-testid={`pool-${r.resourceKey}`}>
+              <span>{r.resourceKey.replace("spell-slot-", "Razina ")}</span>
+              <span className="font-mono">
+                {r.current ?? "?"} / {r.max ?? "?"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <Dialog open={spell !== null} onClose={() => setCasting(null)} title={`Bacanje: ${spell?.name ?? ""}`}>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-2 text-sm">Odaberi trošak (nikad oba):</legend>
+          {spell?.spellLevel === 0 ? (
+            <label className="flex min-h-11 items-center gap-2">
+              <input type="radio" name="cost" value="none" checked={cost === "none"} onChange={() => setCost("none")} /> Bez troška (cantrip)
+            </label>
+          ) : null}
+          {slots.map((r) => (
+            <label key={r.id} className="flex min-h-11 items-center gap-2">
+              <input type="radio" name="cost" value={`slot:${r.id}`} checked={cost === `slot:${r.id}`} onChange={() => setCost(`slot:${r.id}`)} />
+              Slot {r.resourceKey.replace("spell-slot-", "razine ")} ({r.current ?? "?"} preostalo)
+            </label>
+          ))}
+          {freeUses.map((r) => (
+            <label key={r.id} className="flex min-h-11 items-center gap-2">
+              <input type="radio" name="cost" value={`free:${r.id}`} checked={cost === `free:${r.id}`} onChange={() => setCost(`free:${r.id}`)} />
+              Besplatna uporaba: {r.resourceKey} ({r.current ?? "?"} preostalo)
+            </label>
+          ))}
+        </fieldset>
+        <div className="mt-4 flex gap-2">
+          <Button onClick={cast} disabled={!cost}>
+            Potvrdi bacanje
+          </Button>
+          <Button variant="quiet" onClick={() => setCasting(null)}>
+            Odustani
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog open={details !== null} onClose={() => setDetails(null)} title="Podaci čarolije">
+        {details ? (
+          <div className="flex flex-col gap-3">
+            <NumberField label="Razina (0 = cantrip)" value={details.level} onChange={(v) => setDetails({ ...details, level: v })} min={0} max={9} />
+            <label className="flex flex-col gap-1 text-sm">
+              Koncentracija
+              <select value={details.conc} onChange={(e) => setDetails({ ...details, conc: e.target.value })} className="min-h-11 rounded-md border border-current/30 bg-transparent px-2">
+                <option value="">nepoznato</option>
+                <option value="da">da</option>
+                <option value="ne">ne</option>
+              </select>
+            </label>
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  const lvl = details.level === "" ? null : toInt(details.level);
+                  const ok = await submit("Podaci čarolije", [
+                    { type: "SetSpellDetails", payload: { spellSelectionId: details.id, spellLevel: lvl, concentration: details.conc === "" ? null : details.conc === "da" } },
+                  ]);
+                  if (ok) setDetails(null);
+                }}
+              >
+                Spremi
+              </Button>
+              <Button variant="quiet" onClick={() => setDetails(null)}>
+                Odustani
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
+    </div>
+  );
+}
+
+/** Pregled i potvrda odmora (hash pregleda veže potvrdu uz ono što je igrač vidio). */
+export function RestDialog({ sheet, submit, kind, onClose }: TabProps & { kind: "short" | "long" | null; onClose: () => void }) {
+  const rest = kind;
+  const setRest = (next: null) => next === null && onClose();
+  const preview = rest ? sheet.restPreview[rest] : null;
+  return (
+    <Dialog open={preview !== null} onClose={() => setRest(null)} title={rest === "long" ? "Pregled dugog odmora" : "Pregled kratkog odmora"}>
+      {preview ? (
+        <div className="space-y-3 text-sm" data-testid="rest-preview">
+          {preview.hp ? (
+            <p>
+              HP: {preview.hp.before} → {preview.hp.after}
+            </p>
+          ) : null}
+          {preview.temp ? (
+            <p>
+              Privremeni HP: {preview.temp.before} → {preview.temp.after}
+            </p>
+          ) : null}
+          {preview.pools.map((p) => (
+            <p key={p.resourcePoolId}>
+              {p.resourceKey}: {p.before ?? "?"} → {p.after ?? "?"}
+            </p>
+          ))}
+          {preview.pools.length === 0 && !preview.hp && !preview.temp ? <p>Nema promjena.</p> : null}
+          {preview.unchanged.length > 0 ? (
+            <div>
+              <p className="font-medium">Ne mijenja se:</p>
+              <ul className="list-disc pl-5">
+                {preview.unchanged.map((u) => (
+                  <li key={u.what}>
+                    {u.what}: {u.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                if (await submit(rest === "long" ? "Dugi odmor" : "Kratki odmor", [{ type: "CompleteRest", payload: { characterId: sheet.character.id, kind: rest, previewHash: preview.hash } }])) setRest(null);
+              }}
+            >
+              Potvrdi odmor
+            </Button>
+            <Button variant="quiet" onClick={() => setRest(null)}>
+              Odustani
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
+  );
+}
+
+/* ------------------------------ Sposobnosti ---------------------------- */
+
+export function AbilitiesTab({ sheet, submit }: TabProps) {
+  const [rest, setRest] = useState<"short" | "long" | null>(null);
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Section title="Resursi">
+        <ul className="space-y-2">
+          {sheet.resources.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-current/15 p-2" data-testid={`resource-${r.resourceKey}`}>
+              <span>
+                {r.resourceKey}{" "}
+                <span className="font-mono" data-testid={`resource-${r.resourceKey}-value`}>
+                  {r.current === null ? "nepoznato" : r.current} / {r.max ?? "?"}
+                </span>
+                <span className="ml-2 text-xs">obnova: {r.rechargePolicy ?? "nepoznata"}</span>
+              </span>
+              <Button variant="quiet" disabled={r.current === null || r.current < 1} onClick={() => submit(`Potrošnja: ${r.resourceKey}`, [{ type: "ConsumeResource", payload: { resourcePoolId: r.id, amount: 1 } }])}>
+                Potroši 1
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Section>
+      <Section title="Značajke">
+        <ul className="space-y-1">
+          {sheet.features.map((f) => (
+            <li key={f.id} className="text-sm">
+              {f.name}
+              {f.kind ? ` · ${f.kind === "active" ? "aktivna" : "pasivna"}` : ""}
+            </li>
+          ))}
+        </ul>
+      </Section>
+      <Section title="Odmor">
+        <p className="text-sm">Odmor obnavlja resurse samo nakon potvrde. Nova sesija ili jutro nisu odmor.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button variant="quiet" onClick={() => setRest("short")}>
+            Kratki odmor…
+          </Button>
+          <Button variant="quiet" onClick={() => setRest("long")}>
+            Dugi odmor…
+          </Button>
+        </div>
+      </Section>
+      <RestDialog sheet={sheet} submit={submit} kind={rest} onClose={() => setRest(null)} />
+    </div>
+  );
+}
+
+/* -------------------------------- Bilješke ----------------------------- */
+
+export function NotesTab({ sheet, submit }: TabProps) {
+  const [text, setText] = useState("");
+  return (
+    <Section title="Bilješke">
+      <p className="mb-2 text-sm">Osobne bilješke ne mijenjaju mehaniku lika. Dnevnik kampanje dolazi u Fazi 4.</p>
+      <label className="flex flex-col gap-1 text-sm">
+        Nova bilješka
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} className="rounded-md border border-current/30 bg-transparent p-2 text-base" />
+      </label>
+      <Button
+        className="mt-2"
+        disabled={!text.trim()}
+        onClick={async () => {
+          if (await submit("Bilješka", [{ type: "AppendJournalNote", payload: { title: null, text: text.trim(), visibility: "player" } }])) setText("");
+        }}
+      >
+        Spremi bilješku
+      </Button>
+      <p className="mt-2 text-xs">Verzija stanja: {sheet.stateVersion}</p>
+    </Section>
+  );
+}

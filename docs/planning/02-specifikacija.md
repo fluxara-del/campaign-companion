@@ -8,9 +8,9 @@ Ovaj dokument opisuje originalan proizvod. Ni arhitektura, ni model podataka, ni
 
 Companion treba omogućiti solo igranje kampanje na hrvatskom jeziku: pregled lika, brzo upravljanje borbenim stanjem, razgovor s AI Dungeon Masterom i pouzdan dnevnik posljedica. Svijet i sadržaj kampanje ostaju originalni Nareth. Igrač donosi odluke svojeg lika; DM upravlja svijetom i posljedicama. Rezultate bacanja zadano unosi igrač. Napredovanje je milestone.
 
-MVP uključuje jednu lokalnu kampanju, jednog igrača, digitalni character sheet, inventory, spells, features/resources, journal, razgovor s AI DM-om, potvrđene promjene stanja i izvoz. Ne uključuje marketplace pravila, D&D Beyond sinkronizaciju, scraping character API-ja, reprodukciju tuđeg dizajna, virtualni stol, automatski uvoz kupljenih knjiga ni potpuno automatiziran simulator svih 5e pravila.
+MVP uključuje jednu lokalnu kampanju, jednog igrača, digitalni character sheet, inventory, spells, features/resources, journal, razgovor s AI DM-om, potvrđene promjene stanja i izvoz. Ne uključuje marketplace pravila, D&D Beyond sinkronizaciju, scraping character API-ja, preuzimanje tuđih asseta ili koda, virtualni stol, automatski uvoz kupljenih knjiga ni potpuno automatiziran simulator svih 5e pravila.
 
-Pravila moraju imati eksplicitni profil `dnd5e-2024` i verziju. Nepodržana pravila ostaju predmet obrazložene DM odluke i evidentirane ručne korekcije. Sadržaji dobivaju polja podrijetla i dopuštenja; u proizvod ulaze originalni sadržaj, sadržaj korisnika i provjereno dopušteni izvori. D&D Beyond slike, CSS, fontovi, kod i vlasnički opisi ne ulaze u projekt.
+Pravila moraju imati eksplicitni profil `dnd5e-2024` i verziju. Nepodržana pravila ostaju predmet obrazložene DM odluke i evidentirane ručne korekcije. Sadržaji dobivaju polja podrijetla i dopuštenja; u proizvod ulaze originalni sadržaj, sadržaj korisnika i provjereno dopušteni izvori. D&D Beyond slike, CSS, fontovi, kod i vlasnički opisi ne ulaze u projekt. **Izmjena 26. 11. 2026. (odluka vlasnika, ADR-0008):** vizualni izgled character sheeta namjerno slijedi vlasnikov referentni primjer (`primjer dizajna ui.png`, izvan repozitorija): raspored, boje, okviri i hijerarhija informacija. Izgled se izrađuje vlastitim kodom i CSS-om; ne preuzimaju se slike, ilustracije, logotipi, fontovi, ikone, CSS ni tekstovi referentnog proizvoda, a naziv i oznake su vlastiti (hrvatski).
 
 ## 2. Obveze prema postojećem projektu
 
@@ -29,11 +29,11 @@ Posebno treba očuvati:
 - Predmet može imati vlasnika, trenutačnog držatelja i lokaciju; nepoznato držanje ne znači vlasništvo igrača.
 - Glasina, opažanje, NPC tvrdnja, zaključak i objektivni kanon nisu ista vrsta znanja.
 
-## 3. Navigacija i originalni UX
+## 3. Navigacija i UX
 
 Glavne cjeline su **Igra**, **Lik**, **Dnevnik** i **Svijet**. Postavke, sigurnosne kopije i pravila dostupni su odvojeno. Otvaranje igre vraća posljednju potvrđenu scenu, verziju i otvorena pitanja, a ne izmišljeni nastavak.
 
-Na desktopu je Igra podijeljena na naraciju s unosom odluke, sažetak lika i posljednje potvrđene promjene. Lik ima kartice Pregled, Borba, Oprema, Magija, Sposobnosti i Bilješke. Umjesto dekorativnog papirnatog lista koristi se mirna tipografija, izvorne jednostavne ikone i jasne numeričke skupine. Boja pomaže orijentaciji, ali tekst i znakovi prenose svako stanje.
+Na desktopu je Igra podijeljena na naraciju s unosom odluke, sažetak lika i posljednje potvrđene promjene. Lik (ADR-0008) ima tamnu gornju traku s imenom, razinom, verzijom i radnjama Kratki/Dugi odmor; ispod nje traku sažetka (šest atributa s modifikatorom i vrijednošću u ovalu, proficiency, brzina, inspiracija, AC, inicijativa, HP okvir s Liječenje/iznos/Šteta i trenutni/maks./privremeni) te tri stupca: saving throwovi i pasivna osjetila, tablica vještina, radni panel s karticama Borba, Oprema, Magija, Sposobnosti i Bilješke. Bijeli okviri s crvenim rubom na svijetloj pozadini, kao u vlasnikovu primjeru. Boja pomaže orijentaciji, ali tekst i znakovi prenose svako stanje.
 
 Na mobitelu su Igra, Lik, Dnevnik i Više u donjoj navigaciji. HP i koncentracija ostaju u kompaktnom zaglavlju prikaza lika. Dugački popisi postaju kartice ili listovi detalja. Otvaranje detalja čuva položaj skrola, a povratak vraća fokus na izvorni element. Odabir cilja ili resursa mora biti vidljiv prije potvrde. Nijedna radnja ne ovisi o hoveru ili samo o drag-and-drop gesti.
 
