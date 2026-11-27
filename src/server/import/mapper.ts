@@ -409,6 +409,12 @@ export function buildImportPlan(
       importedOverride("spellSaveDc", dc, "Uvezena vrijednost.", "state/character.json#spellSaveDC");
       if (atk !== null) importedOverride("spellAttack", atk, "Uvezena vrijednost.", "state/character.json#spellAttackBonus");
     }
+  } else if (dc !== null || atk !== null) {
+    // Bez DC-a ili proficiency bonusa atribut se ne može izvesti; poznati zbrojevi ostaju poznati.
+    const why = pb === null ? "Uvezena vrijednost; atribut čaranja nije moguće izvesti (nepoznat proficiency bonus)." : "Uvezena vrijednost; atribut čaranja nije moguće izvesti bez zabilježenog DC-a.";
+    findings.push({ code: "spellcasting_unknown", severity: "warning", message: "Atribut čaranja nije poznat; zabilježeni DC i/ili napad sačuvani kao override." });
+    if (dc !== null) importedOverride("spellSaveDc", dc, why, "state/character.json#spellSaveDC");
+    if (atk !== null) importedOverride("spellAttack", atk, why, "state/character.json#spellAttackBonus");
   }
 
   const characterExt = {

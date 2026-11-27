@@ -46,3 +46,19 @@ Migracija Faze 3 (nespojena) ponovno je generirana s novim stupcima i CHECK-ovim
 | P2: override proficiency bonusa nije korišten pri izvođenju | Efektivni PB = zabilježeni (ako postoji) ili po razini; isti se koristi za saveove, vještine i atribut čaranja; razlika ili nepoznata razina → override bonusa | isti test: bonus 3 uz razinu 2; nepoznata razina uz bonus 2 |
 
 Test uspoređuje sve zabilježene saveove, vještine, spell DC i napad s vrijednostima koje sheet izračuna nakon uvoza. Kontrolna provjera: sa starim mapiranjem padaju tri varijante. Ukupno 155 testova.
+
+## Codex pregled `31fc1ab`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P2: bez razine i proficiency bonusa (ili bez DC-a) gube se zabilježeni spell DC i napad | Kad se atribut čaranja ne može izvesti, svaki zabilježeni zbroj (DC, napad) čuva se kao override s razlogom; nalaz `spellcasting_unknown` | „Uvezeni zbrojevi …”: nepoznata razina bez bonusa; napad bez DC-a |
+
+## SR-02: zamijenjena razvojna migracija Faze 3
+
+Migracija `20261125214816_phase3_character_sheet` (b3fb208) zamijenjena je s `20261125221334_phase3_character_sheet` (0682a58) prije spajanja. Provjera svih lokalnih baza (samo čitanje `_prisma_migrations`, 27. 11. 2026.):
+
+- produkcijska baza ne postoji (deploy nikad nije pokrenut);
+- `data/dev.db` (sintetički demo) ima novu migraciju;
+- jedina baza sa starom migracijom je jednokratni probni uvoz `import-sandbox/2026-11-25T22-02-06-069Z/trial.db`. Probni uvoz se svaki put gradi iznova iz nepromijenjenog izvora, pa nema povijesti koju treba sačuvati; tu generaciju ne treba nadograđivati nego je zanemariti ili obrisati.
+
+Zato nadogradnja sa stare na novu migraciju nije potrebna. Napomena za buduće faze: jednom spojena migracija se ne mijenja; ispravak ide novom migracijom.
