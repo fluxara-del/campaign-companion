@@ -194,6 +194,7 @@ export function exportCampaign(db: Db, actor: Actor, opts: ExportOptions): Expor
   if (existsSync(finalDir)) throw new Error(`Generacija ${genName} već postoji.`);
   const tmpDir = path.join(outRoot, `.tmp-${randomUUID()}`);
   mkdirSync(tmpDir);
+  let pointerTmp: string | null = null;
 
   try {
     const contents: [string, string][] = [
@@ -248,13 +249,16 @@ export function exportCampaign(db: Db, actor: Actor, opts: ExportOptions): Expor
       createdAt,
     };
     const pointerPath = path.join(outRoot, `CURRENT.${opts.audience}.json`);
-    const pointerTmp = path.join(outRoot, `.CURRENT.${opts.audience}.${randomUUID()}.tmp`);
+    pointerTmp = path.join(outRoot, `.CURRENT.${opts.audience}.${randomUUID()}.tmp`);
     writeDurable(pointerTmp, JSON.stringify(pointer, null, 2) + "\n");
+    step("pointer:rename");
     renameSync(pointerTmp, pointerPath);
+    pointerTmp = null;
     return { generationDir: finalDir, pointerPath, manifest };
   } catch (e) {
+    // Čiste se samo vlastite privremene putanje; paralelni izvoz u isti direktorij ostaje netaknut.
     rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    for (const f of readdirSync(outRoot)) if (f.startsWith(`.CURRENT.${opts.audience}.`) && f.endsWith(".tmp")) rmSync(path.join(outRoot, f), { force: true });
+    if (pointerTmp) rmSync(pointerTmp, { force: true });
     throw e;
   }
 }
@@ -291,13 +295,29 @@ export function verifyExportGeneration(dir: string): { ok: boolean; problems: st
   return { ok: problems.length === 0, problems, manifest };
 }
 
-/** Trenutačno objavljena generacija prema pointeru, s provjerom. */
+/**
+ * Trenutačno objavljena generacija prema pointeru, s provjerom integriteta i publike: tražena publika,
+ * `audience` u pointeru i `audience` u manifestu moraju se podudarati (player provjera nikad ne smije
+ * proći za DM generaciju), a generacija mora biti neposredno unutar `generations/`.
+ */
 export function readCurrentExport(outRoot: string, audience: Audience): { pointer: ExportPointer; check: ReturnType<typeof verifyExportGeneration> } | null {
-  const p = path.join(path.resolve(outRoot), `CURRENT.${audience}.json`);
+  const root = path.resolve(outRoot);
+  const p = path.join(root, `CURRENT.${audience}.json`);
   if (!existsSync(p)) return null;
   const pointer = JSON.parse(readFileSync(p, "utf8")) as ExportPointer;
-  const dir = path.join(path.resolve(outRoot), pointer.generation);
+  const dir = path.resolve(root, String(pointer.generation));
+  if (path.dirname(dir) !== path.join(root, "generations")) {
+    return { pointer, check: { ok: false, problems: ["Pointer ne pokazuje na generaciju unutar generations/."], manifest: null } };
+  }
   const check = verifyExportGeneration(dir);
+  if (pointer.audience !== audience) {
+    check.problems.push(`Pointer je za publiku „${String(pointer.audience)}”, tražena je „${audience}”.`);
+    check.ok = false;
+  }
+  if (check.manifest && check.manifest.audience !== audience) {
+    check.problems.push(`Manifest generacije je za publiku „${String(check.manifest.audience)}”, tražena je „${audience}”.`);
+    check.ok = false;
+  }
   const manifestSha = existsSync(path.join(dir, "manifest.json")) ? sha256(readFileSync(path.join(dir, "manifest.json"))) : "";
   if (manifestSha !== pointer.manifestSha256) {
     check.problems.push("Pointer ne odgovara manifestu generacije.");

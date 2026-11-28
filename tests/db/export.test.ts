@@ -135,6 +135,68 @@ describe("Verzionirani izvoz", () => {
     expect(second).not.toMatch(/\(cold\)/);
   });
 
+  it("P1 (97248c1): provjera publike — player provjera odbija DM generaciju i kad je hash ispravan", () => {
+    const player = exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "player", now: () => "2026-11-28T10:00:00.000Z" });
+    const dm = exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "dm", now: () => "2026-11-28T10:00:01.000Z" });
+    // Obje ispravne kombinacije prolaze.
+    expect(readCurrentExport(out, "player")!.check.ok).toBe(true);
+    expect(readCurrentExport(out, "dm")!.check.ok).toBe(true);
+    const playerPtr = readFileSync(player.pointerPath, "utf8");
+    const dmPtr = readFileSync(dm.pointerPath, "utf8");
+
+    // (1) Zamijenjen pointer: CURRENT.player.json sadrži DM pointer.
+    writeFileSync(player.pointerPath, dmPtr);
+    const swapped = readCurrentExport(out, "player")!;
+    expect(swapped.check.ok).toBe(false);
+    expect(swapped.check.problems.join(" ")).toMatch(/publiku „dm”/);
+
+    // (2) Pointer označen kao player, s ispravnim hashom, ali vodi na DM manifest.
+    const forged = { ...JSON.parse(dmPtr), audience: "player" };
+    writeFileSync(player.pointerPath, JSON.stringify(forged));
+    const relabelled = readCurrentExport(out, "player")!;
+    expect(relabelled.check.ok).toBe(false);
+    expect(relabelled.check.problems.join(" ")).toMatch(/Manifest generacije je za publiku „dm”/);
+
+    // Putanja izvan generations/ se odbija.
+    writeFileSync(player.pointerPath, JSON.stringify({ ...JSON.parse(playerPtr), generation: "../izvan" }));
+    expect(readCurrentExport(out, "player")!.check.ok).toBe(false);
+
+    writeFileSync(player.pointerPath, playerPtr);
+    expect(readCurrentExport(out, "player")!.check.ok).toBe(true);
+  });
+
+  it("P2 (97248c1): neuspjeli paralelni izvoz ne briše privremeni pointer drugog izvoza", () => {
+    let other: unknown = null;
+    const second = exportCampaign(db, OWNER, {
+      campaignId: C1,
+      outRoot: out,
+      audience: "player",
+      now: () => "2026-11-28T12:00:00.000Z",
+      onStep: (s) => {
+        // Drugi izvoz je zapisao privremeni pointer i čeka objavu; u tom trenutku prvi pada.
+        if (s !== "pointer:rename") return;
+        try {
+          exportCampaign(db, OWNER, {
+            campaignId: C1,
+            outRoot: out,
+            audience: "player",
+            now: () => "2026-11-28T12:00:05.000Z",
+            onStep: (t) => {
+              if (t === "pointer:rename") throw new Error("prekid prvog");
+            },
+          });
+        } catch (e) {
+          other = e;
+        }
+      },
+    });
+    expect(String(other)).toMatch(/prekid prvog/);
+    const cur = readCurrentExport(out, "player")!;
+    expect(cur.check.ok).toBe(true);
+    expect(cur.pointer.generation).toBe(`generations/${path.basename(second.generationDir)}`);
+    expect(readdirSync(out).filter((f) => f.startsWith("."))).toEqual([]);
+  });
+
   it("izvoz ne mijenja bazu", () => {
     const counts = () =>
       ["DomainEvent", "JournalEntry", "KnowledgeAssertion", "Session", "BatchReceipt"].map((t) => (db.prepare(`SELECT count(*) AS n FROM "${t}"`).get() as { n: number }).n).concat(

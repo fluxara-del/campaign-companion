@@ -66,3 +66,12 @@ Kontrolna provjera: bez podjele po sesiji oba testa padaju. Shema nepromijenjena
 | Nalaz | Rješenje | Test |
 |---|---|---|
 | SUP-19-05 (Codex P2): `FactCorrected` bez zamjene nije nosio subjekt, pa `getJournal({ refId })` nije nalazio povlačenje tvrdnje u vlastitom batchu | Payload `FactCorrected` nosi `subjectKind`/`subjectId` ispravljene tvrdnje (nova shema ovog PR-a, bez starih podataka; bez promjene sheme baze). Vidljivost i dalje u SQL-u: DM-only ispravka ne dolazi do igrača | „SUP-19-05: povlačenje u vlastitom batchu …” (vlasnik i igrač; DM-only ispravka skrivena igraču); bez ispravka pada |
+
+## Vlasnikov review na `97248c1`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| P1: `readCurrentExport` (i `npm run export -- --verify`) provjeravao je integritet i hash manifesta, ali ne i publiku, pa je `CURRENT.player.json` koji vodi na valjanu DM generaciju prolazio kao ispravan | Tražena publika, `audience` u pointeru i `audience` u manifestu moraju se podudarati; generacija mora biti neposredno unutar `generations/` | „P1 (97248c1): provjera publike …”: zamijenjen pointer i pointer označen kao player koji vodi na DM manifest se odbijaju; obje ispravne kombinacije (player, dm) prolaze; putanja izvan `generations/` se odbija |
+| P2: neuspjeli izvoz brisao je sve privremene pointere iste publike, pa je mogao srušiti paralelni izvoz koji čeka objavu | Svaki izvoz pamti i briše samo vlastite privremene putanje (direktorij i pointer) | „P2 (97248c1): neuspjeli paralelni izvoz …”: prvi pada dok drugi čeka objavu; drugi završava, `CURRENT.player.json` pokazuje na njegovu provjerenu generaciju, bez zaostalih privremenih datoteka |
+
+Kontrolna provjera: bez ispravaka oba testa padaju.
