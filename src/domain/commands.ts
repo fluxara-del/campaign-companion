@@ -188,6 +188,62 @@ export const CompleteRest = z.strictObject({
   payload: z.strictObject({ characterId: EntityId, kind: z.enum(["short", "long"]), previewHash: z.string().regex(/^[a-f0-9]{64}$/) }),
 });
 
+// --- Faza 4: dnevnik, znanje i sesije ---
+
+const KnowledgeKind = z.enum(["observed", "reported", "rumor", "inferred", "canon"]);
+const FactText = z.string().trim().min(1).max(4_000);
+
+/** Izmjena osobne bilješke: nova revizija uz očekivanu staru; povijest ostaje u događajima. */
+export const ReviseJournalNote = z.strictObject({
+  ...commandBase,
+  type: z.literal("ReviseJournalNote"),
+  payload: z.strictObject({
+    journalEntryId: EntityId,
+    expectedRevision: z.int().min(1).max(1_000_000),
+    title: z.string().min(1).max(200).nullable(),
+    text: z.string().min(1).max(10_000),
+  }),
+});
+
+/** Nova tvrdnja o svijetu s vrstom znanja, vidljivošću i izvorom (spec §9). */
+export const RecordWorldFact = z.strictObject({
+  ...commandBase,
+  type: z.literal("RecordWorldFact"),
+  payload: z.strictObject({
+    subject: z.strictObject({ kind: z.enum(["npc", "quest", "location", "world"]), id: EntityId.nullable() }),
+    text: FactText,
+    knowledgeKind: KnowledgeKind,
+    visibility: Visibility,
+    sourceRef: z.string().min(1).max(300).nullable(),
+  }),
+});
+
+/**
+ * Ispravka potvrđene prošlosti: novi događaj koji referencira izvorni (izvorni se ne mijenja).
+ * Ako je izvor tvrdnja, ona postaje zamijenjena (uz `replacement`) ili povučena.
+ */
+export const CorrectConfirmedFact = z.strictObject({
+  ...commandBase,
+  type: z.literal("CorrectConfirmedFact"),
+  payload: z.strictObject({
+    targetEventId: EntityId,
+    reason: z.string().trim().min(1).max(1_000),
+    replacement: z.strictObject({ text: FactText, knowledgeKind: KnowledgeKind, visibility: Visibility }).nullable(),
+  }),
+});
+
+export const StartSession = z.strictObject({
+  ...commandBase,
+  type: z.literal("StartSession"),
+  payload: z.strictObject({ title: z.string().trim().min(1).max(200).nullable() }),
+});
+
+export const EndSession = z.strictObject({
+  ...commandBase,
+  type: z.literal("EndSession"),
+  payload: z.strictObject({ sessionId: EntityId }),
+});
+
 export const BatchCommand = z.discriminatedUnion("type", [
   ApplyDamage,
   ApplyHealing,
@@ -207,6 +263,11 @@ export const BatchCommand = z.discriminatedUnion("type", [
   TransferItem,
   SetEquipped,
   CompleteRest,
+  ReviseJournalNote,
+  RecordWorldFact,
+  CorrectConfirmedFact,
+  StartSession,
+  EndSession,
 ]);
 export type BatchCommand = z.infer<typeof BatchCommand>;
 export type CommandType = BatchCommand["type"];

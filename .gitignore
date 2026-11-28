@@ -64,3 +64,6 @@ Thumbs.db
 test-results/
 playwright-report/
 blob-report/
+
+# Izvozi kampanje (privatni podaci)
+/exports/

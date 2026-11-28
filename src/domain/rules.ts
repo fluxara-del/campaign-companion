@@ -1,6 +1,6 @@
 import type { BatchCommand } from "./commands";
 import { DomainError } from "./errors";
-import { EVENT_SCHEMA_VERSION, type EventDraft, type ItemPlacement } from "./events";
+import { EVENT_SCHEMA_VERSION, type EventDraft, type ItemPlacement, type Visibility } from "./events";
 import { getOwn } from "./records";
 import { previewRest } from "./rest";
 import type { CampaignState } from "./state";
@@ -14,7 +14,95 @@ export type DecideContext = {
   knownHolderRefs: ReadonlySet<string>;
   /** NPC-evi vidljivi samo DM-u (za svaku ulogu isti skup); transfer koji ih dotiče vidi samo DM. */
   hiddenHolderRefs: ReadonlySet<string>;
+  /** Faza 4: dnevnik, znanje i sesije (projekcije iz spremišta, ažurirane tijekom batcha). */
+  journal: JournalContext;
 };
+
+export type NoteInfo = { authorActorId: string | null; revision: number; visibility: Visibility };
+export type AssertionInfo = {
+  status: "active" | "superseded" | "retracted";
+  visibility: Visibility;
+  subjectKind: "npc" | "quest" | "location" | "world";
+  subjectId: string | null;
+};
+export type EventInfo = { id: string; seq: number; type: string; visibility: Visibility; assertionId: string | null };
+
+export type JournalContext = {
+  actorId: string;
+  /** Vlasnik kampanje (DM) vidi i mijenja sve; ostale uloge samo player/shared. */
+  isOwner: boolean;
+  /** Verzija kampanje koju će ovaj batch upisati. */
+  stateVersionAfter: number;
+  notes: Map<string, NoteInfo>;
+  knowledge: Map<string, AssertionInfo>;
+  openSession: { id: string; number: number } | null;
+  lastSessionNumber: number;
+  /** Potvrđeni događaj iz ranijeg batcha (null ako ne postoji). */
+  findEvent: (eventId: string) => EventInfo | null;
+  /** NPC/quest postoji i uloga ga smije vidjeti. */
+  subjectVisible: (kind: "npc" | "quest", id: string) => boolean;
+  /** NPC/quest je vidljiv igračima (player/shared) — isto pravilo kao za EntityRecord. */
+  subjectPublic: (kind: "npc" | "quest", id: string) => boolean;
+};
+
+export function emptyJournalContext(over: Partial<JournalContext> = {}): JournalContext {
+  return {
+    actorId: "owner",
+    isOwner: true,
+    stateVersionAfter: 1,
+    notes: new Map(),
+    knowledge: new Map(),
+    openSession: null,
+    lastSessionNumber: 0,
+    findEvent: () => null,
+    subjectVisible: () => false,
+    subjectPublic: () => false,
+    ...over,
+  };
+}
+
+const visibleTo = (j: JournalContext, v: Visibility) => j.isOwner || v !== "dm";
+
+/** Subjekt iz registra (NPC/quest) koji nije vidljiv igračima. */
+function hiddenSubject(j: JournalContext, kind: "npc" | "quest" | "location" | "world", id: string | null): boolean {
+  return (kind === "npc" || kind === "quest") && id !== null && !j.subjectPublic(kind, id);
+}
+
+/**
+ * Ažurira kontekst dnevnika nakon događaja istog batcha, tako da sljedeća naredba vidi njegov učinak
+ * (npr. dvije revizije iste bilješke, početak i kraj sesije). Ne dira mehaničko stanje.
+ */
+export function applyToJournalContext(j: JournalContext, draft: EventDraft): void {
+  switch (draft.type) {
+    case "JournalNoteAppended":
+      j.notes.set(draft.payload.journalEntryId, { authorActorId: j.actorId, revision: 1, visibility: draft.visibility });
+      return;
+    case "JournalNoteRevised": {
+      const n = j.notes.get(draft.payload.journalEntryId);
+      if (n) n.revision = draft.payload.revisionAfter;
+      return;
+    }
+    case "WorldFactRecorded":
+      j.knowledge.set(draft.payload.assertionId, { status: "active", visibility: draft.visibility, subjectKind: draft.payload.subjectKind, subjectId: draft.payload.subjectId });
+      return;
+    case "FactCorrected": {
+      const old = draft.payload.assertionId ? j.knowledge.get(draft.payload.assertionId) : undefined;
+      const r = draft.payload.replacement;
+      if (old) old.status = r ? "superseded" : "retracted";
+      if (r) j.knowledge.set(r.assertionId, { status: "active", visibility: r.visibility, subjectKind: r.subjectKind, subjectId: r.subjectId });
+      return;
+    }
+    case "SessionStarted":
+      j.openSession = { id: draft.payload.sessionId, number: draft.payload.number };
+      j.lastSessionNumber = draft.payload.number;
+      return;
+    case "SessionEnded":
+      j.openSession = null;
+      return;
+    default:
+      return;
+  }
+}
 
 function violation(ctx: DecideContext, message: string, details: Record<string, unknown> = {}): never {
   throw new DomainError("rule_violation", message, { commandIndex: ctx.commandIndex, ...details });
@@ -401,6 +489,116 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
           },
         },
       ];
+    }
+
+    // --- Faza 4: dnevnik, znanje i sesije ---
+
+    case "ReviseJournalNote": {
+      const j = ctx.journal;
+      const { journalEntryId, expectedRevision, title, text } = command.payload;
+      const note = j.notes.get(journalEntryId);
+      // Bilješka koju uloga ne smije vidjeti ponaša se kao nepostojeća.
+      if (!note || !visibleTo(j, note.visibility)) violation(ctx, "Bilješka ne postoji.", { journalEntryId });
+      if (!j.isOwner && note.authorActorId !== j.actorId) {
+        throw new DomainError("forbidden", "Bilješku može mijenjati njezin autor ili vlasnik kampanje.", { commandIndex: ctx.commandIndex, journalEntryId });
+      }
+      if (note.revision !== expectedRevision) {
+        violation(ctx, "Bilješka je u međuvremenu izmijenjena; učitaj novu reviziju.", { reason: "revision_stale", journalEntryId, currentRevision: note.revision });
+      }
+      return [
+        {
+          schemaVersion: EVENT_SCHEMA_VERSION,
+          visibility: note.visibility,
+          knowledgeKind: null,
+          type: "JournalNoteRevised",
+          payload: { journalEntryId, revisionBefore: note.revision, revisionAfter: note.revision + 1, title, text },
+        },
+      ];
+    }
+
+    case "RecordWorldFact": {
+      const j = ctx.journal;
+      const { subject, text, knowledgeKind, visibility, sourceRef } = command.payload;
+      if (!j.isOwner && (visibility === "dm" || knowledgeKind === "canon")) {
+        throw new DomainError("forbidden", "Kanon i DM tvrdnje upisuje samo vlasnik kampanje.", { commandIndex: ctx.commandIndex });
+      }
+      if ((subject.kind === "npc" || subject.kind === "quest") && (subject.id === null || !j.subjectVisible(subject.kind, subject.id))) {
+        violation(ctx, "Subjekt tvrdnje ne postoji.", { subjectKind: subject.kind });
+      }
+      if (subject.kind === "world" && subject.id !== null) violation(ctx, "Tvrdnja o svijetu nema subjekt s ID-jem.");
+      // Tvrdnja vidljiva igraču ne smije otkriti skriveni subjekt (njegov ID ide u događaj, dnevnik i izvoz).
+      if (visibility !== "dm" && hiddenSubject(j, subject.kind, subject.id)) {
+        violation(ctx, "Tvrdnja vidljiva igraču ne smije imati subjekt vidljiv samo DM-u; postavi vidljivost „dm” ili najprije otkrij subjekt.", { reason: "hidden_subject" });
+      }
+      return [
+        {
+          schemaVersion: EVENT_SCHEMA_VERSION,
+          visibility,
+          knowledgeKind,
+          type: "WorldFactRecorded",
+          payload: { assertionId: ctx.newId(), subjectKind: subject.kind, subjectId: subject.id, text, knowledgeKind, sourceRef },
+        },
+      ];
+    }
+
+    case "CorrectConfirmedFact": {
+      const j = ctx.journal;
+      const { targetEventId, reason, replacement } = command.payload;
+      if (!j.isOwner) throw new DomainError("forbidden", "Ispravke potvrđene prošlosti upisuje vlasnik kampanje.", { commandIndex: ctx.commandIndex });
+      const target = j.findEvent(targetEventId);
+      if (!target) violation(ctx, "Događaj ne postoji.", { targetEventId });
+      const assertion = target.assertionId ? j.knowledge.get(target.assertionId) : undefined;
+      if (target.assertionId && assertion && assertion.status !== "active") {
+        violation(ctx, "Tvrdnja je već ispravljena; ispravi njezinu zamjenu.", { targetEventId, assertionId: target.assertionId });
+      }
+      if (replacement && !assertion) violation(ctx, "Zamjenska tvrdnja moguća je samo za događaj koji je zabilježio tvrdnju.", { targetEventId });
+      // Javna zamjena preuzima subjekt izvorne tvrdnje; skriveni subjekt se tako ne smije otkriti.
+      if (replacement && assertion && replacement.visibility !== "dm" && hiddenSubject(j, assertion.subjectKind, assertion.subjectId)) {
+        violation(ctx, "Zamjena vidljiva igraču ne smije imati subjekt vidljiv samo DM-u; postavi vidljivost „dm” ili najprije otkrij subjekt.", { reason: "hidden_subject", targetEventId });
+      }
+      const anyDm = target.visibility === "dm" || replacement?.visibility === "dm";
+      const allShared = target.visibility === "shared" && (!replacement || replacement.visibility === "shared");
+      return [
+        {
+          schemaVersion: EVENT_SCHEMA_VERSION,
+          visibility: anyDm ? "dm" : allShared ? "shared" : "player",
+          knowledgeKind: replacement?.knowledgeKind ?? null,
+          type: "FactCorrected",
+          payload: {
+            targetEventId,
+            targetSeq: target.seq,
+            targetType: target.type,
+            reason,
+            assertionId: assertion ? target.assertionId : null,
+            subjectKind: assertion?.subjectKind ?? null,
+            subjectId: assertion?.subjectId ?? null,
+            replacement:
+              replacement && assertion
+                ? { assertionId: ctx.newId(), subjectKind: assertion.subjectKind, subjectId: assertion.subjectId, text: replacement.text, knowledgeKind: replacement.knowledgeKind, visibility: replacement.visibility }
+                : null,
+          },
+        },
+      ];
+    }
+
+    case "StartSession": {
+      const j = ctx.journal;
+      if (!j.isOwner) throw new DomainError("forbidden", "Sesiju otvara vlasnik kampanje.", { commandIndex: ctx.commandIndex });
+      if (j.openSession) violation(ctx, "Sesija je već otvorena; najprije je zatvori.", { sessionId: j.openSession.id });
+      return [
+        {
+          ...mechanical,
+          type: "SessionStarted",
+          payload: { sessionId: ctx.newId(), number: j.lastSessionNumber + 1, title: command.payload.title, startVersion: j.stateVersionAfter },
+        },
+      ];
+    }
+
+    case "EndSession": {
+      const j = ctx.journal;
+      if (!j.isOwner) throw new DomainError("forbidden", "Sesiju zatvara vlasnik kampanje.", { commandIndex: ctx.commandIndex });
+      if (!j.openSession || j.openSession.id !== command.payload.sessionId) violation(ctx, "Sesija nije otvorena.", { sessionId: command.payload.sessionId });
+      return [{ ...mechanical, type: "SessionEnded", payload: { sessionId: j.openSession.id, number: j.openSession.number, endVersion: j.stateVersionAfter } }];
     }
   }
 }

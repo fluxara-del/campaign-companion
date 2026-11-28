@@ -4,10 +4,10 @@ import { canonicalHash, canonicalJson } from "@/domain/canonical";
 import { batchRequestHash, parseBatch, type BatchCommand } from "@/domain/commands";
 import { DomainError } from "@/domain/errors";
 import { applyEvent, ReplayDivergenceError } from "@/domain/reducer";
-import { decide } from "@/domain/rules";
+import { decide, emptyJournalContext } from "@/domain/rules";
 import type { CampaignState } from "@/domain/state";
 
-const ctx = { commandIndex: 0, newId: () => "id-1", knownHolderRefs: new Set(["PC"]), hiddenHolderRefs: new Set<string>() };
+const ctx = { commandIndex: 0, newId: () => "id-1", knownHolderRefs: new Set(["PC"]), hiddenHolderRefs: new Set<string>(), journal: emptyJournalContext() };
 const intentRef = { kind: "player_choice", messageId: "m1" } as const;
 
 function state(): CampaignState {

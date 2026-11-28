@@ -60,6 +60,12 @@ export function applyEvent(state: CampaignState, event: DomainEventBody): Campai
       return state;
     }
     case "JournalNoteAppended":
+    // Faza 4: dnevnik, znanje i sesije nisu mehaničko stanje; projekcije se grade u spremištu.
+    case "JournalNoteRevised":
+    case "WorldFactRecorded":
+    case "FactCorrected":
+    case "SessionStarted":
+    case "SessionEnded":
       return state;
 
     case "AbilityScoreSet": {

@@ -44,6 +44,7 @@ Aplikacija je na <http://localhost:3000>, health check na `/api/health`.
 | `npm run dev:seed -- --db ./data/dev.db` | Sintetička demo kampanja za lokalni razvoj (uz `KDZ_AUTH_MODE=local-owner` u `.env`) |
 | `npm run test:e2e` | Playwright e2e (desktop i 390 px) nad privremenom bazom |
 | `npm run import:trial -- --source <kampanja>` | Probni uvoz u zasebnu bazu nad kopijom izvora (`import-sandbox/`, izvan Gita); pokretati dok se kampanja ne mijenja |
+| `npm run export -- --campaign <id> --out <dir> [--audience player/dm]` | Verzionirani izvoz (generacija s manifestom i SHA-256, `CURRENT.<publika>.json`); `--verify` provjerava objavljenu generaciju. Samo čita bazu; izvoze ne stavljati u Git (`/exports/` je ignoriran) |
 
 ## Način rada
 

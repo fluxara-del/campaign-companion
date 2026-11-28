@@ -109,8 +109,13 @@ describe("SR-02: nadogradnja baze prethodne verzije (unknownTotalsJson)", () => 
     expect(before.characters.length).toBeGreaterThan(0);
     expect(before.events.length).toBe(6);
 
-    // 3) Nadogradnja: točno SQL nove migracije.
-    old.exec(readFileSync(path.join(migrationsDir, NEW_MIGRATION, "migration.sql"), "utf8"));
+    // 3) Nadogradnja: SQL nove migracije i svih kasnijih (npr. Faza 4), redom kako ih primjenjuje deploy.
+    const upgrades = readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && d.name >= NEW_MIGRATION)
+      .map((d) => d.name)
+      .sort();
+    expect(upgrades[0]).toBe(NEW_MIGRATION);
+    for (const m of upgrades) old.exec(readFileSync(path.join(migrationsDir, m, "migration.sql"), "utf8"));
 
     // 4) Ništa postojeće nije promijenjeno; novi stupac je [] za sve likove.
     const after = characterRows();

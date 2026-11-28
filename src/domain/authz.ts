@@ -21,9 +21,12 @@ const AI_ALLOWED: readonly CommandType[] = [
   "EndConcentration",
 ];
 
+/** Samo vlasnik (DM solo kampanje): sesije i ispravke potvrđene prošlosti. */
+const OWNER_ONLY: readonly CommandType[] = ["StartSession", "EndSession", "CorrectConfirmedFact"];
+
 const ALLOWED: Record<MemberRole, readonly CommandType[]> = {
   owner: COMMAND_TYPES,
-  player: COMMAND_TYPES,
+  player: COMMAND_TYPES.filter((t) => !OWNER_ONLY.includes(t)),
   ai_service: AI_ALLOWED,
   viewer: [],
 };
