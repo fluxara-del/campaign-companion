@@ -179,6 +179,9 @@ export type FactCorrected = {
     reason: string;
     /** Tvrdnja koju ispravka zamjenjuje ili povlači (ako je izvor bio WorldFactRecorded). */
     assertionId: string | null;
+    /** Subjekt ispravljene tvrdnje (null za ispravku običnog događaja): filtar dnevnika po subjektu nalazi i povlačenje. */
+    subjectKind: "npc" | "quest" | "location" | "world" | null;
+    subjectId: string | null;
     replacement: {
       assertionId: string;
       subjectKind: "npc" | "quest" | "location" | "world";

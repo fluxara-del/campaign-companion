@@ -570,6 +570,8 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
             targetType: target.type,
             reason,
             assertionId: assertion ? target.assertionId : null,
+            subjectKind: assertion?.subjectKind ?? null,
+            subjectId: assertion?.subjectId ?? null,
             replacement:
               replacement && assertion
                 ? { assertionId: ctx.newId(), subjectKind: assertion.subjectKind, subjectId: assertion.subjectId, text: replacement.text, knowledgeKind: replacement.knowledgeKind, visibility: replacement.visibility }

@@ -60,3 +60,9 @@ Kontrolna provjera: bez provjere skrivenog subjekta oba nova testa padaju. Testo
 | SUP-19-04 (Codex P2): projekcijski unos batcha svrstavao se u sesiju prvog događaja, pa je `[ApplyHealing, EndSession, ApplyDamage]` u `journal.md` i `getJournal` prikazivao štetu unutar zatvorene sesije | Projekcijski unos nastaje po batchu, vidljivosti **i sesiji** (pisanje u `batch-service`, ponovno generiranje u `journal-projection`), pa svaki unos pripada jednoj sesiji; `getJournal` i `journal.md` time su točni | „početak i kraj sesije u istom batchu” (prošireno: kraj i početak sesije usred batcha, svaki unos jedne sesije, filtar po sesiji), „SUP-19-04: journal.md svrstava svaki događaj u njegovu sesiju …” |
 
 Kontrolna provjera: bez podjele po sesiji oba testa padaju. Shema nepromijenjena.
+
+## Supervisor na `20ceeca`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-19-05 (Codex P2): `FactCorrected` bez zamjene nije nosio subjekt, pa `getJournal({ refId })` nije nalazio povlačenje tvrdnje u vlastitom batchu | Payload `FactCorrected` nosi `subjectKind`/`subjectId` ispravljene tvrdnje (nova shema ovog PR-a, bez starih podataka; bez promjene sheme baze). Vidljivost i dalje u SQL-u: DM-only ispravka ne dolazi do igrača | „SUP-19-05: povlačenje u vlastitom batchu …” (vlasnik i igrač; DM-only ispravka skrivena igraču); bez ispravka pada |

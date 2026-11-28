@@ -178,6 +178,26 @@ describe("Znanje: glasina, kanon i ispravke", () => {
     expect(verifyReplay(db, C1).ok).toBe(true);
   });
 
+  it("SUP-19-05: povlačenje u vlastitom batchu nalazi se filtrom po subjektu; DM-only ispravka ostaje skrivena igraču", () => {
+    const pub = run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-MARA" }, text: "Mara je u gradu.", knowledgeKind: "observed", visibility: "player", sourceRef: null })]);
+    const retract = run([cmd("CorrectConfirmedFact", { targetEventId: eventId(pub, "WorldFactRecorded"), reason: "Mara je otputovala", replacement: null })]);
+    const retractId = eventId(retract, "FactCorrected");
+    for (const actor of [OWNER, PLAYER]) {
+      const ids = getJournal(db, actor, C1, { refId: "NPC-MARA" }).entries.flatMap((e) => e.events.map((ev) => ev.id));
+      expect(ids).toContain(eventId(pub, "WorldFactRecorded"));
+      expect(ids).toContain(retractId);
+    }
+    // DM-only ispravka javne tvrdnje: vlasnik je nalazi po subjektu, igrač ne.
+    const pub2 = run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-MARA" }, text: "Mara nosi ključ.", knowledgeKind: "reported", visibility: "player", sourceRef: null })]);
+    const dmCorr = run([cmd("CorrectConfirmedFact", { targetEventId: eventId(pub2, "WorldFactRecorded"), reason: "DM-TAJNA: ključ je lažan", replacement: { text: "DM-TAJNA: Mara nosi lažni ključ.", knowledgeKind: "canon", visibility: "dm" } })]);
+    const dmCorrId = eventId(dmCorr, "FactCorrected");
+    expect(getJournal(db, OWNER, C1, { refId: "NPC-MARA" }).entries.flatMap((e) => e.events.map((ev) => ev.id))).toContain(dmCorrId);
+    const forPlayer = getJournal(db, PLAYER, C1, { refId: "NPC-MARA" });
+    expect(forPlayer.entries.flatMap((e) => e.events.map((ev) => ev.id))).not.toContain(dmCorrId);
+    expect(JSON.stringify(forPlayer)).not.toMatch(SECRET);
+    expect(verifyReplay(db, C1).ok).toBe(true);
+  });
+
   it("subjekt mora postojati i biti vidljiv autoru", () => {
     expect(fail(() => run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "Viđen je.", knowledgeKind: "observed", visibility: "player", sourceRef: null })], PLAYER)).code).toBe("rule_violation");
     expect(fail(() => run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NEMA" }, text: "x", knowledgeKind: "observed", visibility: "player", sourceRef: null })])).code).toBe("rule_violation");
