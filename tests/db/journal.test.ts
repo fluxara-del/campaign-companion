@@ -215,7 +215,7 @@ describe("Filtriranje tajni na serveru", () => {
   });
 
   it("SUP-19-02: javna zamjena DM-only tvrdnje ne otkriva ID ni seq skrivenih događaja", () => {
-    const r1 = run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "DM-TAJNA: zvonar je kultist.", knowledgeKind: "canon", visibility: "dm", sourceRef: null })]);
+    const r1 = run([cmd("RecordWorldFact", { subject: { kind: "world", id: null }, text: "DM-TAJNA: zvonar je kultist.", knowledgeKind: "canon", visibility: "dm", sourceRef: null })]);
     const hiddenFact = eventId(r1, "WorldFactRecorded");
     const r2 = run([cmd("CorrectConfirmedFact", { targetEventId: hiddenFact, reason: "Otkriveno javno", replacement: { text: "Zvonar je nestao.", knowledgeKind: "observed", visibility: "player" } })]);
     const hiddenCorrection = eventId(r2, "FactCorrected");
@@ -228,6 +228,28 @@ describe("Filtriranje tajni na serveru", () => {
     }
     // Vlasnik vidi puni trag.
     expect(getKnowledge(db, OWNER, C1, { includeHistory: true }).find((a) => a.text === "Zvonar je nestao.")).toMatchObject({ sourceEventId: hiddenCorrection, createdSeq: 2 });
+  });
+
+  it("SUP-19-03: tvrdnja vidljiva igraču ne smije otkriti skriveni subjekt (izravni upis i javna zamjena)", () => {
+    // 1) Izravni upis vlasnika: player/shared tvrdnja o DM-only NPC-u se odbija.
+    for (const visibility of ["player", "shared"] as const) {
+      const e = fail(() => run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "Viđen na trgu.", knowledgeKind: "observed", visibility, sourceRef: null })]));
+      expect(e.code).toBe("rule_violation");
+      expect(e.details).toMatchObject({ reason: "hidden_subject" });
+    }
+    // 2) Javna zamjena DM-only tvrdnje o skrivenom NPC-u se odbija; DM zamjena je dopuštena.
+    const r = run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "DM-TAJNA: on je zvonar.", knowledgeKind: "canon", visibility: "dm", sourceRef: null })]);
+    const target = eventId(r, "WorldFactRecorded");
+    expect(fail(() => run([cmd("CorrectConfirmedFact", { targetEventId: target, reason: "javno", replacement: { text: "Zvonar je nestao.", knowledgeKind: "observed", visibility: "player" } })])).details).toMatchObject({ reason: "hidden_subject" });
+    run([cmd("CorrectConfirmedFact", { targetEventId: target, reason: "DM-TAJNA precizno", replacement: { text: "DM-TAJNA: on je glavni zvonar.", knowledgeKind: "canon", visibility: "dm" } })]);
+    // Tvrdnja o javnom NPC-u ostaje dopuštena.
+    run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-MARA" }, text: "Mara zna put.", knowledgeKind: "reported", visibility: "player", sourceRef: null })]);
+    for (const actor of [PLAYER, VIEWER]) {
+      expect(JSON.stringify(getKnowledge(db, actor, C1, { includeHistory: true }))).not.toMatch(SECRET);
+      expect(JSON.stringify(getJournal(db, actor, C1))).not.toMatch(SECRET);
+    }
+    expect(getKnowledge(db, OWNER, C1, { includeHistory: true }).filter((a) => a.subjectId === "NPC-TAJNI")).toHaveLength(2);
+    expect(verifyReplay(db, C1).ok).toBe(true);
   });
 
   it("stranac nema pristup dnevniku ni znanju", () => {

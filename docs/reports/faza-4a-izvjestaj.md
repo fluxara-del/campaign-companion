@@ -44,3 +44,11 @@ Kontrolne provjere: bez filtra vidljivosti u `getJournal` i bez maskiranja DM is
 | SUP-19-02 (Codex P2): javna zamjena DM-only tvrdnje nosila je `sourceEventId` i `createdSeq` skrivenog događaja ispravke (igrač i player izvoz) | Za ulogu koja nije vlasnik: `sourceEventId`/`createdSeq` su `null` kad izvorni događaj nije vidljiv; `correctedByEventId`/`supersededById` se uklanjaju kad pokazuju na DM-only događaj ili tvrdnju. Vlasnik vidi puni trag. Bez promjene sheme | „SUP-19-02: javna zamjena DM-only tvrdnje …” (igrač i promatrač), „SUP-19-02: player izvoz …” (nijedna datoteka ne sadrži ID skrivenih događaja) |
 
 Kontrolna provjera: bez ispravaka sva tri nova testa padaju.
+
+## Supervisor na `6a5bfe2` (BLOCK)
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-19-03 (Codex P1): tvrdnja vidljiva igraču mogla je otkriti `subjectId` DM-only NPC-a ili questa — izravnim upisom vlasnika ili javnom zamjenom DM-only tvrdnje — u `getKnowledge`, `knowledge.json` i `journal.md` | `RecordWorldFact` i `CorrectConfirmedFact` odbijaju tvrdnju ili zamjenu vidljivu igraču (player/shared) čiji subjekt nije vidljiv igračima (isto pravilo kao za `EntityRecord`), s porukom vlasniku i `reason: hidden_subject`. DM tvrdnje i DM zamjene o skrivenom subjektu ostaju dopuštene. Bez promjene sheme | „SUP-19-03: tvrdnja vidljiva igraču ne smije otkriti skriveni subjekt …” (oba puta; igrač i promatrač bez ID-a i imena; DM vidi obje tvrdnje), „SUP-19-03: player izvoz ne sadrži ID skrivenog subjekta …” (`knowledge.json`, `journal.md`, `events.jsonl`, `journal.json`) |
+
+Kontrolna provjera: bez provjere skrivenog subjekta oba nova testa padaju. Testovi SUP-19-02 sada koriste DM tvrdnju o javnom subjektu (svijet), jer javna zamjena tvrdnje o skrivenom NPC-u više nije moguća.

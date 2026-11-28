@@ -90,7 +90,8 @@ describe("Verzionirani izvoz", () => {
   });
 
   it("SUP-19-02: player izvoz javne zamjene DM-only tvrdnje ne sadrži ID ni seq skrivenih događaja", () => {
-    const hidden = db.prepare(`SELECT id, seq FROM "DomainEvent" WHERE campaignId = ? AND type = 'WorldFactRecorded' AND visibility = 'dm'`).get(C1) as { id: string; seq: number };
+    const dmFact = run([cmd("RecordWorldFact", { subject: { kind: "world", id: null }, text: "DM-TAJNA: kult postoji.", knowledgeKind: "canon", visibility: "dm", sourceRef: null })]);
+    const hidden = { id: dmFact.events[0]!.id };
     const corr = run([cmd("CorrectConfirmedFact", { targetEventId: hidden.id, reason: "Otkriveno", replacement: { text: "Kult postoji.", knowledgeKind: "observed", visibility: "player" } })]);
     const corrId = corr.events[0]!.id;
     const r = exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "player" });
@@ -101,6 +102,13 @@ describe("Verzionirani izvoz", () => {
     }
     const k = JSON.parse(files["knowledge.json"]!) as { text: string; sourceEventId: string | null; createdSeq: number | null }[];
     expect(k.find((a) => a.text === "Kult postoji.")).toMatchObject({ sourceEventId: null, createdSeq: null });
+  });
+
+  it("SUP-19-03: player izvoz ne sadrži ID skrivenog subjekta; javne tvrdnje o njemu se ne mogu upisati", () => {
+    expect(() => run([cmd("RecordWorldFact", { subject: { kind: "npc", id: "NPC-TAJNI" }, text: "Viđen.", knowledgeKind: "observed", visibility: "player", sourceRef: null })])).toThrow(DomainError);
+    const r = exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "player" });
+    const files = readAll(r.generationDir);
+    for (const name of ["knowledge.json", "journal.md", "events.jsonl", "journal.json"]) expect(files[name], name).not.toContain("NPC-TAJNI");
   });
 
   it("izvoz ne mijenja bazu", () => {

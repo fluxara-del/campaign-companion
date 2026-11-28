@@ -35,6 +35,7 @@ export function loadJournalContext(db: Db, campaignId: string, actorId: string, 
   const last = db.prepare(`SELECT COALESCE(MAX(number), 0) AS n FROM "Session" WHERE campaignId = ?`).get(campaignId) as { n: number };
 
   const findEventStmt = db.prepare(`SELECT id, seq, type, visibility, payloadJson FROM "DomainEvent" WHERE campaignId = ? AND id = ?`);
+  const publicSubjectStmt = db.prepare(`SELECT 1 FROM "EntityRecord" WHERE campaignId = ? AND kind = ? AND id = ? AND ${visibilityClause("player")}`);
   const subjectStmt = db.prepare(`SELECT 1 FROM "EntityRecord" WHERE campaignId = ? AND kind = ? AND id = ? AND ${visibilityClause(role)}`);
 
   return {
@@ -51,6 +52,7 @@ export function loadJournalContext(db: Db, campaignId: string, actorId: string, 
       return { id: r.id, seq: r.seq, type: r.type, visibility: r.visibility, assertionId: assertionOf({ type: r.type, payload: JSON.parse(r.payloadJson) } as DomainEventBody) } satisfies EventInfo;
     },
     subjectVisible: (kind, id) => subjectStmt.get(campaignId, kind, id) !== undefined,
+    subjectPublic: (kind, id) => publicSubjectStmt.get(campaignId, kind, id) !== undefined,
   };
 }
 

@@ -41,6 +41,8 @@ export type JournalContext = {
   findEvent: (eventId: string) => EventInfo | null;
   /** NPC/quest postoji i uloga ga smije vidjeti. */
   subjectVisible: (kind: "npc" | "quest", id: string) => boolean;
+  /** NPC/quest je vidljiv igračima (player/shared) — isto pravilo kao za EntityRecord. */
+  subjectPublic: (kind: "npc" | "quest", id: string) => boolean;
 };
 
 export function emptyJournalContext(over: Partial<JournalContext> = {}): JournalContext {
@@ -54,11 +56,17 @@ export function emptyJournalContext(over: Partial<JournalContext> = {}): Journal
     lastSessionNumber: 0,
     findEvent: () => null,
     subjectVisible: () => false,
+    subjectPublic: () => false,
     ...over,
   };
 }
 
 const visibleTo = (j: JournalContext, v: Visibility) => j.isOwner || v !== "dm";
+
+/** Subjekt iz registra (NPC/quest) koji nije vidljiv igračima. */
+function hiddenSubject(j: JournalContext, kind: "npc" | "quest" | "location" | "world", id: string | null): boolean {
+  return (kind === "npc" || kind === "quest") && id !== null && !j.subjectPublic(kind, id);
+}
 
 /**
  * Ažurira kontekst dnevnika nakon događaja istog batcha, tako da sljedeća naredba vidi njegov učinak
@@ -518,6 +526,10 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
         violation(ctx, "Subjekt tvrdnje ne postoji.", { subjectKind: subject.kind });
       }
       if (subject.kind === "world" && subject.id !== null) violation(ctx, "Tvrdnja o svijetu nema subjekt s ID-jem.");
+      // Tvrdnja vidljiva igraču ne smije otkriti skriveni subjekt (njegov ID ide u događaj, dnevnik i izvoz).
+      if (visibility !== "dm" && hiddenSubject(j, subject.kind, subject.id)) {
+        violation(ctx, "Tvrdnja vidljiva igraču ne smije imati subjekt vidljiv samo DM-u; postavi vidljivost „dm” ili najprije otkrij subjekt.", { reason: "hidden_subject" });
+      }
       return [
         {
           schemaVersion: EVENT_SCHEMA_VERSION,
@@ -540,6 +552,10 @@ export function decide(state: CampaignState, command: BatchCommand, ctx: DecideC
         violation(ctx, "Tvrdnja je već ispravljena; ispravi njezinu zamjenu.", { targetEventId, assertionId: target.assertionId });
       }
       if (replacement && !assertion) violation(ctx, "Zamjenska tvrdnja moguća je samo za događaj koji je zabilježio tvrdnju.", { targetEventId });
+      // Javna zamjena preuzima subjekt izvorne tvrdnje; skriveni subjekt se tako ne smije otkriti.
+      if (replacement && assertion && replacement.visibility !== "dm" && hiddenSubject(j, assertion.subjectKind, assertion.subjectId)) {
+        violation(ctx, "Zamjena vidljiva igraču ne smije imati subjekt vidljiv samo DM-u; postavi vidljivost „dm” ili najprije otkrij subjekt.", { reason: "hidden_subject", targetEventId });
+      }
       const anyDm = target.visibility === "dm" || replacement?.visibility === "dm";
       const allShared = target.visibility === "shared" && (!replacement || replacement.visibility === "shared");
       return [
