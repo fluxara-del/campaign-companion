@@ -8,7 +8,7 @@ Specifikacija §4, §9 i §10 traži dnevnik u tri sloja (nepromjenjivi događaj
 
 ## Odluka
 
-1. **Događaji su izvor istine.** `JournalEntry`, `KnowledgeAssertion` i `Session` su projekcije događaja: pišu se u istoj `BEGIN IMMEDIATE` transakciji batcha (ADR-0006) i ne ulaze u mehaničko stanje lika ni u snapshot (format 2 ostaje isti). `verifyJournalProjections` ih ponovno izračunava iz događaja i uspoređuje sa spremljenima; provjera je dio `verifyReplay`.
+1. **Događaji su izvor istine.** `JournalEntry`, `KnowledgeAssertion` i `Session` su projekcije događaja: pišu se u istoj `BEGIN IMMEDIATE` transakciji batcha (ADR-0006) i ne ulaze u mehaničko stanje lika ni u snapshot (format 2 ostaje isti). `verifyJournalProjections` ih ponovno izračunava iz događaja i uspoređuje sa spremljenima; provjera je dio `verifyReplay`. Projekcijski unos nastaje po batchu, vidljivosti i sesiji, pa batch koji zatvara ili otvara sesiju ne miješa događaje različitih sesija.
 2. **Nove naredbe** (sve kroz `executeBatch`):
    - `ReviseJournalNote`: nova revizija uz očekivanu staru (`revision_stale` inače). Smije autor bilješke ili vlasnik. Prethodni tekst ostaje u događajima `JournalNoteAppended` / `JournalNoteRevised`.
    - `RecordWorldFact`: subjekt (`npc`/`quest` iz registra, vidljiv autoru; `location`/`world`), tekst, `knowledgeKind` (observed, reported, rumor, inferred, canon), vidljivost i izvor. Kanon i DM tvrdnje upisuje samo vlasnik. Tvrdnja vidljiva igraču (player/shared), kao i javna zamjena, ne smije imati subjekt (NPC/quest) vidljiv samo DM-u: takav upis se odbija (`hidden_subject`), jer bi ID subjekta završio u događaju, dnevniku i izvozu.

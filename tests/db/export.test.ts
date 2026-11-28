@@ -111,6 +111,30 @@ describe("Verzionirani izvoz", () => {
     for (const name of ["knowledge.json", "journal.md", "events.jsonl", "journal.json"]) expect(files[name], name).not.toContain("NPC-TAJNI");
   });
 
+  it("SUP-19-04: journal.md svrstava svaki događaj u njegovu sesiju i kad batch zatvara ili otvara sesiju", () => {
+    const sid = (db.prepare(`SELECT id FROM "Session" WHERE campaignId = ? AND status = 'open'`).get(C1) as { id: string }).id;
+    run([cmd("ApplyHealing", { characterId: PC, amount: 1 }), cmd("EndSession", { sessionId: sid }), cmd("ApplyDamage", { characterId: PC, amount: 2, damageType: "fire" })]);
+    run([cmd("ApplyDamage", { characterId: PC, amount: 3, damageType: "cold" }), cmd("StartSession", { title: "Kripta" }), cmd("ApplyHealing", { characterId: PC, amount: 2 })]);
+    const md = readAll(exportCampaign(db, OWNER, { campaignId: C1, outRoot: out, audience: "player" }).generationDir)["journal.md"]!;
+    const section = (title: string) => {
+      const start = md.indexOf(title);
+      expect(start, title).toBeGreaterThanOrEqual(0);
+      const next = md.indexOf("\n## ", start + 1);
+      return md.slice(start, next === -1 ? undefined : next);
+    };
+    const first = section("## Sesija 1: Zvonik");
+    const outside = section("## Izvan sesije");
+    const second = section("## Sesija 2: Kripta");
+    expect(first).toMatch(/Liječenje 1/);
+    expect(first).toMatch(/Kraj sesije 1/);
+    expect(first).not.toMatch(/\(fire\)|\(cold\)/);
+    expect(outside).toMatch(/Šteta 2 \(fire\)/);
+    expect(outside).toMatch(/Šteta 3 \(cold\)/);
+    expect(second).toMatch(/Početak sesije 2: Kripta/);
+    expect(second).toMatch(/Liječenje 2/);
+    expect(second).not.toMatch(/\(cold\)/);
+  });
+
   it("izvoz ne mijenja bazu", () => {
     const counts = () =>
       ["DomainEvent", "JournalEntry", "KnowledgeAssertion", "Session", "BatchReceipt"].map((t) => (db.prepare(`SELECT count(*) AS n FROM "${t}"`).get() as { n: number }).n).concat(

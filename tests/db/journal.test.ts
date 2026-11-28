@@ -84,6 +84,20 @@ describe("Sesije", () => {
     const rows = db.prepare(`SELECT type, sessionId FROM "DomainEvent" WHERE campaignId = ? ORDER BY seq`).all(C1) as { type: string; sessionId: string | null }[];
     expect(rows.map((r) => r.sessionId)).toEqual([sid, sid, sid, sid, null]);
     expect(verifyJournalProjections(db, C1).ok).toBe(true);
+
+    // SUP-19-04: unos dnevnika ne miješa događaje različitih sesija, ni preko kraja ni preko početka sesije.
+    run([cmd("ApplyDamage", { characterId: PC, amount: 1, damageType: null }), cmd("StartSession", { title: "Druga" }), cmd("ApplyHealing", { characterId: PC, amount: 1 })]);
+    const sid2 = getJournal(db, OWNER, C1).sessions[1]!.id;
+    const entries = getJournal(db, OWNER, C1).entries;
+    for (const e of entries) {
+      expect(e.events.every((ev) => ev.sessionId === e.sessionId), e.text).toBe(true);
+    }
+    const bySession = (id: string | null) => entries.filter((e) => e.sessionId === id).flatMap((e) => e.events.map((ev) => ev.type));
+    expect(bySession(sid).sort()).toEqual(["DamageApplied", "HealingApplied", "SessionEnded", "SessionStarted"].sort());
+    expect(bySession(null).sort()).toEqual(["DamageApplied", "DamageApplied"]);
+    expect(bySession(sid2).sort()).toEqual(["HealingApplied", "SessionStarted"]);
+    expect(getJournal(db, OWNER, C1, { sessionId: sid }).entries.flatMap((e) => e.events).every((ev) => ev.sessionId === sid)).toBe(true);
+    expect(verifyReplay(db, C1).ok).toBe(true);
   });
 });
 

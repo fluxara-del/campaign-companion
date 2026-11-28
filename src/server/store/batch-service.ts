@@ -137,12 +137,13 @@ function runInTransaction(
 
   const journalEntryIds: string[] = [];
   const mechanical = events.filter((e) => e.draft.type !== "JournalNoteAppended");
-  // Jedna projekcija po vidljivosti: DM-only događaji (npr. transfer skrivenom NPC-u) ne ulaze u unos koji vide igrači.
-  const projections: { id: string; visibility: EventDraft["visibility"]; events: typeof mechanical }[] = [];
+  // Jedna projekcija po vidljivosti i sesiji: DM-only događaji (npr. transfer skrivenom NPC-u) ne ulaze u unos
+  // koji vide igrači, a batch koji zatvara ili otvara sesiju ne miješa događaje različitih sesija u istom unosu.
+  const projections: { id: string; visibility: EventDraft["visibility"]; sessionId: string | null; events: typeof mechanical }[] = [];
   for (const e of mechanical) {
-    let p = projections.find((x) => x.visibility === e.draft.visibility);
+    let p = projections.find((x) => x.visibility === e.draft.visibility && x.sessionId === e.sessionId);
     if (!p) {
-      p = { id: opts.newId(), visibility: e.draft.visibility, events: [] };
+      p = { id: opts.newId(), visibility: e.draft.visibility, sessionId: e.sessionId, events: [] };
       projections.push(p);
       journalEntryIds.push(p.id);
     }

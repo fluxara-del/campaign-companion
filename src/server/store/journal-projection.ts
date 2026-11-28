@@ -16,6 +16,7 @@ export type EventRow = {
   visibility: Visibility;
   actorId: string;
   occurredAt: string;
+  sessionId: string | null;
 };
 
 export type ProjectedEntry = { key: string; kind: "projection" | "manual"; title: string | null; text: string; visibility: Visibility; revision: number; eventIds: string[] };
@@ -50,7 +51,7 @@ export type Projections = { entries: Map<string, ProjectedEntry>; knowledge: Map
 
 const isNote = (t: string) => t === "JournalNoteAppended";
 
-/** Projekcije iz događaja redom `seq`. Ključ projekcijskog unosa je `batchId|visibility`, bilješke `note:<id>`. */
+/** Projekcije iz događaja redom `seq`. Ključ projekcijskog unosa je `batchId|visibility|sessionId`, bilješke `note:<id>`. */
 export function buildProjections(events: EventRow[]): Projections {
   const entries = new Map<string, ProjectedEntry>();
   const knowledge = new Map<string, ProjectedAssertion>();
@@ -62,7 +63,7 @@ export function buildProjections(events: EventRow[]): Projections {
       entries.set(`note:${p.journalEntryId}`, { key: `note:${p.journalEntryId}`, kind: "manual", title: p.title, text: p.text, visibility: e.visibility, revision: 1, eventIds: [e.id] });
       continue;
     }
-    const key = `${e.batchId}|${e.visibility}`;
+    const key = `${e.batchId}|${e.visibility}|${e.sessionId ?? "-"}`;
     const entry = entries.get(key) ?? { key, kind: "projection" as const, title: null, text: "", visibility: e.visibility, revision: 1, eventIds: [] };
     entry.text = entry.text ? `${entry.text}\n${describeEvent(body)}` : describeEvent(body);
     entry.eventIds.push(e.id);
@@ -150,7 +151,7 @@ export function buildProjections(events: EventRow[]): Projections {
 export function loadEventRows(db: Db, campaignId: string): EventRow[] {
   return (
     db
-      .prepare(`SELECT id, seq, batchId, type, payloadJson, visibility, actorId, occurredAt FROM "DomainEvent" WHERE campaignId = ? ORDER BY seq`)
+      .prepare(`SELECT id, seq, batchId, type, payloadJson, visibility, actorId, occurredAt, sessionId FROM "DomainEvent" WHERE campaignId = ? ORDER BY seq`)
       .all(campaignId) as (Omit<EventRow, "payload"> & { payloadJson: string })[]
   ).map(({ payloadJson, ...r }) => ({ ...r, payload: JSON.parse(payloadJson) }));
 }
@@ -165,18 +166,19 @@ export function verifyJournalProjections(db: Db, campaignId: string): { ok: bool
   const stored = db
     .prepare(`SELECT id, batchId, kind, title, text, visibility, revision FROM "JournalEntry" WHERE campaignId = ?`)
     .all(campaignId) as { id: string; batchId: string | null; kind: string; title: string | null; text: string; visibility: Visibility; revision: number }[];
-  const linksStmt = db.prepare(`SELECT l.eventId FROM "JournalEventLink" l JOIN "DomainEvent" e ON e.campaignId = l.campaignId AND e.id = l.eventId WHERE l.campaignId = ? AND l.journalEntryId = ? ORDER BY e.seq`);
+  const linksStmt = db.prepare(`SELECT l.eventId, e.sessionId FROM "JournalEventLink" l JOIN "DomainEvent" e ON e.campaignId = l.campaignId AND e.id = l.eventId WHERE l.campaignId = ? AND l.journalEntryId = ? ORDER BY e.seq`);
   const seen = new Set<string>();
   for (const s of stored) {
     if (s.kind === "summary") continue;
-    const key = s.kind === "manual" ? `note:${s.id}` : `${s.batchId}|${s.visibility}`;
+    const linkRows = linksStmt.all(campaignId, s.id) as { eventId: string; sessionId: string | null }[];
+    const key = s.kind === "manual" ? `note:${s.id}` : `${s.batchId}|${s.visibility}|${linkRows[0]?.sessionId ?? "-"}`;
     const exp = p.entries.get(key);
     if (!exp) {
       problems.push(`Dnevnik: unos ${s.id} nema izvorni događaj.`);
       continue;
     }
     seen.add(key);
-    const links = (linksStmt.all(campaignId, s.id) as { eventId: string }[]).map((l) => l.eventId);
+    const links = linkRows.map((l) => l.eventId);
     const got = { kind: s.kind, title: s.title, text: s.text, visibility: s.visibility, revision: s.revision, eventIds: links };
     const want = { kind: exp.kind, title: exp.title, text: exp.text, visibility: exp.visibility, revision: exp.revision, eventIds: exp.eventIds };
     if (!same(got, want)) problems.push(`Dnevnik: unos ${s.id} ne odgovara ponovno generiranoj projekciji.`);

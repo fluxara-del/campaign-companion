@@ -52,3 +52,11 @@ Kontrolna provjera: bez ispravaka sva tri nova testa padaju.
 | SUP-19-03 (Codex P1): tvrdnja vidljiva igraču mogla je otkriti `subjectId` DM-only NPC-a ili questa — izravnim upisom vlasnika ili javnom zamjenom DM-only tvrdnje — u `getKnowledge`, `knowledge.json` i `journal.md` | `RecordWorldFact` i `CorrectConfirmedFact` odbijaju tvrdnju ili zamjenu vidljivu igraču (player/shared) čiji subjekt nije vidljiv igračima (isto pravilo kao za `EntityRecord`), s porukom vlasniku i `reason: hidden_subject`. DM tvrdnje i DM zamjene o skrivenom subjektu ostaju dopuštene. Bez promjene sheme | „SUP-19-03: tvrdnja vidljiva igraču ne smije otkriti skriveni subjekt …” (oba puta; igrač i promatrač bez ID-a i imena; DM vidi obje tvrdnje), „SUP-19-03: player izvoz ne sadrži ID skrivenog subjekta …” (`knowledge.json`, `journal.md`, `events.jsonl`, `journal.json`) |
 
 Kontrolna provjera: bez provjere skrivenog subjekta oba nova testa padaju. Testovi SUP-19-02 sada koriste DM tvrdnju o javnom subjektu (svijet), jer javna zamjena tvrdnje o skrivenom NPC-u više nije moguća.
+
+## Supervisor na `c7b6331`
+
+| Nalaz | Rješenje | Test |
+|---|---|---|
+| SUP-19-04 (Codex P2): projekcijski unos batcha svrstavao se u sesiju prvog događaja, pa je `[ApplyHealing, EndSession, ApplyDamage]` u `journal.md` i `getJournal` prikazivao štetu unutar zatvorene sesije | Projekcijski unos nastaje po batchu, vidljivosti **i sesiji** (pisanje u `batch-service`, ponovno generiranje u `journal-projection`), pa svaki unos pripada jednoj sesiji; `getJournal` i `journal.md` time su točni | „početak i kraj sesije u istom batchu” (prošireno: kraj i početak sesije usred batcha, svaki unos jedne sesije, filtar po sesiji), „SUP-19-04: journal.md svrstava svaki događaj u njegovu sesiju …” |
+
+Kontrolna provjera: bez podjele po sesiji oba testa padaju. Shema nepromijenjena.
